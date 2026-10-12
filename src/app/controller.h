@@ -50,8 +50,9 @@ public:
     Q_INVOKABLE void copyCode(const QString &id);
     Q_INVOKABLE void pair(const QString &code);
     Q_INVOKABLE void unpair();
-    Q_INVOKABLE void approve(const QString &digits);
-    Q_INVOKABLE void deny();
+    // `challengeId` is the request the screen showed; a replaced request is refused.
+    Q_INVOKABLE void approve(const QString &challengeId, const QString &digits);
+    Q_INVOKABLE void deny(const QString &challengeId);
     Q_INVOKABLE void clearNotice();
 
     // Ubuntu Touch PushClient glue.
@@ -83,7 +84,7 @@ private:
     std::optional<ky::PushCredential> currentPush() const;
     void handlePushBody(const QByteArray &body);
     void refreshPushIfNeeded();
-    void respond(bool approve, const QString &digits);
+    void respond(const QString &challengeId, bool approve, const QString &digits);
     void notifyDesktop();
 
 protected:

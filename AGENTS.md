@@ -34,6 +34,8 @@ CredentialProvider) are not ported.
 - The app locks whenever it leaves the foreground. `lock()` bumps an epoch; a key derivation
   that finishes in an older epoch never opens the vault. An unanswered push request is
   requeued, still encrypted, and re-checked on the next unlock.
+- Approve/deny carry the challenge ID the screen showed; the controller refuses any other,
+  and the QML clears a typed number when the shown request changes.
 - One process owns the data directory (`kyauth.lock`, `QLockFile`). Every vault change goes
   through `saveVault(before)`, which restores the in-memory data if the write fails.
 - The UnifiedPush connector accepts calls only with its token and only from the current owner
@@ -50,7 +52,8 @@ CredentialProvider) are not ported.
 
 - `ctest`: core vectors (RFC 8291, RFC 7914, RFC 6238, KyAuth-Android golden strings);
   `controller`, which drives `Controller` through a `request()` override (no network) for the
-  lock, save-failure, push-requeue and refresh rules; and `qml_smoke`, which drives the real QML through setup, add account and lock and fails on any
+  lock, save-failure, push-requeue and refresh rules, plus the real QML for request binding;
+  and `qml_smoke`, which drives the real QML through setup, add account and lock and fails on any
   QML warning.
 - CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build.
 

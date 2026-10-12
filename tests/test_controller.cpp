@@ -3,6 +3,9 @@
 #include <QDateTime>
 #include <QFile>
 #include <QJsonDocument>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickStyle>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <unistd.h>
@@ -86,6 +89,39 @@ class TestController : public QObject {
     }
 
 private slots:
+    void initTestCase()
+    {
+        QQuickStyle::setStyle(QLatin1String(QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) ? "Basic" : "Default"));
+    }
+
+    // The real QML: a number typed for one request must not approve its replacement.
+    void typedNumberClearsWhenRequestIsReplaced()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c; // private members are reachable as a Controller
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        setUp(c);
+        pair(c);
+
+        b.handlePushBody(challengePush(c, "c1"));
+        QObject *root = engine.rootObjects().constFirst();
+        QObject *digits = nullptr;
+        QTRY_VERIFY((digits = root->findChild<QObject *>(QStringLiteral("requestDigits"))));
+        QObject *approve = root->findChild<QObject *>(QStringLiteral("approveButton"));
+        QVERIFY(approve);
+        digits->setProperty("text", QStringLiteral("42"));
+        QTRY_VERIFY(approve->property("enabled").toBool());
+
+        b.handlePushBody(challengePush(c, "c2"));
+        QTRY_COMPARE(digits->property("text").toString(), QString());
+        QVERIFY(!approve->property("enabled").toBool());
+        QVERIFY(c.requests.isEmpty());
+    }
+
     void unlockFinishingAfterLockStaysLocked()
     {
         QTemporaryDir dir;
@@ -152,7 +188,9 @@ private slots:
         QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
         QVERIFY2(!c.challenge().isEmpty(), "the unanswered request must come back after unlocking");
 
-        c.approve(QStringLiteral("42"));
+        c.approve(QStringLiteral("stale"), QStringLiteral("42"));
+        QVERIFY(c.requests.isEmpty()); // not the request on screen: refused
+        c.approve(QStringLiteral("c1"), QStringLiteral("42"));
         QCOMPARE(c.requests.size(), 1);
         const FakeController::Request r = c.requests.at(0);
         QCOMPARE(r.url, server + QStringLiteral("/api/mfa/push/respond"));
@@ -177,7 +215,7 @@ private slots:
         setUp(c);
         const P256Key device = pair(c);
         b.handlePushBody(challengePush(c, "c2"));
-        c.deny();
+        c.deny(QStringLiteral("c2"));
         QCOMPARE(c.requests.size(), 1);
 
         b.m_latestToken = QStringLiteral("https://push.example.net/up2"); // the distributor moved us

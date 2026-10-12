@@ -553,26 +553,29 @@ QVariantMap Controller::challenge() const
 {
     if (!m_challenge)
         return {};
-    return {{QStringLiteral("purpose"), m_challenge->purpose},
+    return {{QStringLiteral("id"), m_challenge->challengeId},
+            {QStringLiteral("purpose"), m_challenge->purpose},
             {QStringLiteral("title"), m_challenge->title},
             {QStringLiteral("body"), m_challenge->body},
             {QStringLiteral("expiresIn"), int(qMax<qint64>(0, (m_challenge->expiresAtMs - nowMs()) / 1000))}};
 }
 
-void Controller::approve(const QString &digits)
+void Controller::approve(const QString &challengeId, const QString &digits)
 {
     static const QRegularExpression twoDigits(QStringLiteral("^\\d{2}$"));
     if (!twoDigits.match(digits).hasMatch())
         return say(tr("Type the 2-digit number shown on the sign-in screen."));
-    respond(true, digits);
+    respond(challengeId, true, digits);
 }
 
-void Controller::deny() { respond(false, {}); }
+void Controller::deny(const QString &challengeId) { respond(challengeId, false, {}); }
 
-void Controller::respond(bool approve, const QString &digits)
+void Controller::respond(const QString &challengeId, bool approve, const QString &digits)
 {
     if (!m_vault || !m_challenge || m_busy)
         return;
+    if (m_challenge->challengeId != challengeId)
+        return say(tr("A newer request replaced that one. Check the number again."));
     const QJsonObject p = m_vault->data.value(QStringLiteral("pairing")).toObject();
     const QString server = p.value(QStringLiteral("serverUrl")).toString();
     const QString deviceId = p.value(QStringLiteral("deviceId")).toString();

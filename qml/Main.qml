@@ -214,6 +214,9 @@ ApplicationWindow {
                 Card {
                     id: request
                     visible: controller.challenge.purpose !== undefined
+                    // A typed number belongs to one request: a replacement clears it.
+                    readonly property string shownId: controller.challenge.id || ""
+                    onShownIdChanged: digits.text = ""
                     border.color: win.accent
                     color: win.accentSoft
                     Heading {
@@ -224,6 +227,7 @@ ApplicationWindow {
                     Body { text: qsTr("Type the number shown on the sign-in screen. Deny if you did not just sign in.") }
                     TextField {
                         id: digits
+                        objectName: "requestDigits"
                         placeholderText: "00"
                         maximumLength: 2
                         inputMethodHints: Qt.ImhDigitsOnly
@@ -237,13 +241,14 @@ ApplicationWindow {
                             text: qsTr("Deny")
                             enabled: !controller.busy
                             Layout.fillWidth: true
-                            onClicked: { controller.deny(); digits.text = "" }
+                            onClicked: { controller.deny(request.shownId); digits.text = "" }
                         }
                         Primary {
+                            objectName: "approveButton"
                             text: qsTr("Approve")
-                            enabled: !controller.busy && digits.text.length === 2
+                            enabled: !controller.busy && digits.text.length === 2 && request.shownId !== ""
                             Layout.fillWidth: true
-                            onClicked: { controller.approve(digits.text); digits.text = "" }
+                            onClicked: { controller.approve(request.shownId, digits.text); digits.text = "" }
                         }
                     }
                     Body { text: qsTr("Expires in %1 s").arg(controller.challenge.expiresIn || 0) }

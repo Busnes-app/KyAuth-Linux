@@ -73,10 +73,11 @@ if(KYAUTH_TESTS)
         target_link_libraries(test_${t} PRIVATE kyauthcore Qt${QT_VERSION_MAJOR}::Test)
         add_test(NAME ${t} COMMAND test_${t})
     endforeach()
-    add_executable(test_controller tests/test_controller.cpp)
-    target_link_libraries(test_controller PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test)
+    add_executable(test_controller tests/test_controller.cpp qml/qml.qrc)
+    target_link_libraries(test_controller PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test
+        Qt${QT_VERSION_MAJOR}::Qml Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickControls2)
     add_test(NAME controller COMMAND test_controller)
-    set_tests_properties(controller PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(controller PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     # Loads the real QML offscreen and fails on any QML warning.
     add_test(NAME qml_smoke COMMAND kyauth --smoke-test)
     # Software scene graph: headless runners have no OpenGL.
