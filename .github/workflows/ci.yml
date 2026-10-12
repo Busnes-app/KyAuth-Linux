@@ -49,4 +49,7 @@ jobs:
       - name: Install Clickable
         run: pip install --user clickable-ut==8.9.0
       - name: Build click
+        # Clickable prefers podman, whose rootless mode cannot map the image's IDs on the runner.
+        env:
+          CLICKABLE_DOCKER_COMMAND: docker
         run: ~/.local/bin/clickable build --arch arm64 --accept-review-errors

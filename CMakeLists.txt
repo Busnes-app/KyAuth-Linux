@@ -72,5 +72,6 @@ if(KYAUTH_TESTS)
     endforeach()
     # Loads the real QML offscreen and fails on any QML warning.
     add_test(NAME qml_smoke COMMAND kyauth --smoke-test)
-    set_tests_properties(qml_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    # Software scene graph: headless runners have no OpenGL.
+    set_tests_properties(qml_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 endif()
