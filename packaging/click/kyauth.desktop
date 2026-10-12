@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=KyAuth
+Comment=Authenticator codes and KyIdentity sign-in approvals
+Exec=kyauth
+Icon=kyauth.png
+Terminal=false
+Type=Application
+X-Lomiri-Touch=true

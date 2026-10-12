@@ -1,0 +1,7 @@
+clickable_minimum_required: 8.9.0
+builder: cmake
+framework: ubuntu-touch-24.04-1.x
+build_args:
+  - -DKYAUTH_UBUNTU_TOUCH=ON
+  - -DKYAUTH_TESTS=OFF
+kill: kyauth

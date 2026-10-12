@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions: read-all
+
+jobs:
+  test:
+    name: Test (${{ matrix.qt }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Qt 5.15 is what Ubuntu Touch ships; Qt 6 is what Nura's Plasma Mobile ships.
+          - qt: qt5
+            packages: >-
+              qtbase5-dev qtdeclarative5-dev qtquickcontrols2-5-dev qml-module-qtquick2
+              qml-module-qtquick-controls2 qml-module-qtquick-layouts qml-module-qtquick-window2
+              qml-module-qtquick-templates2 qml-module-qtqml-models2
+          - qt: qt6
+            packages: >-
+              qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls
+              qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window
+              qml6-module-qtqml-workerscript qml6-module-qtqml-models libgl-dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build g++ libssl-dev ${{ matrix.packages }}
+      - name: Build
+        run: |
+          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  click:
+    name: Ubuntu Touch click (arm64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Clickable
+        run: pip install --user clickable-ut==8.9.0
+      - name: Build click
+        # Clickable prefers podman, whose rootless mode cannot map the image's IDs on the runner.
+        env:
+          CLICKABLE_DOCKER_COMMAND: docker
+        run: ~/.local/bin/clickable build --arch arm64 --accept-review-errors

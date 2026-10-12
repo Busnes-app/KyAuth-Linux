@@ -1,0 +1,19 @@
+{
+    "name": "kyauth.busnes",
+    "title": "KyAuth",
+    "description": "Authenticator codes and KyIdentity push sign-in approvals.",
+    "version": "@PROJECT_VERSION@",
+    "maintainer": "Busnes.app <yoshi@urlxl.com>",
+    "architecture": "@CLICK_ARCH@",
+    "framework": "@CLICK_FRAMEWORK@",
+    "hooks": {
+        "kyauth": {
+            "apparmor": "kyauth.apparmor",
+            "desktop": "kyauth.desktop"
+        },
+        "push": {
+            "apparmor": "push-helper.apparmor",
+            "push-helper": "push-helper.json"
+        }
+    }
+}
