@@ -1,3 +1,54 @@
+# KyAuth-Linux
+
+## Purpose
+
+Linux phone port of `kyauth-android`: TOTP codes, KyIdentity Push MFA (approve/deny with
+number matching) and a passcode lock. One Qt/QML + C++ codebase for two targets:
+
+- **Nura** (postmarketOS, renamed 2026-09-27): native install; push through a UnifiedPush
+  distributor over D-Bus (`org.unifiedpush.Connector2`, spec DBUS_0.3.0). Bus name
+  `app.busnes.kyauth`.
+- **Ubuntu Touch** 24.04 (`-DKYAUTH_UBUNTU_TOUCH=ON`, `clickable.yaml`): click package
+  `kyauth.busnes`; push through Ubuntu Push (Lomiri `PushClient`, app id
+  `kyauth.busnes_kyauth`), because UT has no UnifiedPush distributor. Decided by the user on
+  2026-10-11.
+
+KyIdentity sign-on (Android AccountManager) and the passkey provider (Android
+CredentialProvider) are not ported.
+
+## Local Contracts
+
+- Wire contract: `docs/push-contract.md`, plus the Android contract it extends. Both transports
+  carry the same RFC 8291 `aes128gcm` payload; no plaintext push path exists. The server side is
+  KyIdentity `feat/linux-authenticator`.
+- Registration sends `platform: "linux"` and no attestation; the device is graded `none`.
+- Qt 5.15 is the floor (UT's only stable Qt). Code must build unchanged on Qt 6. OpenSSL >= 3.0.
+- `src/core` depends on QtCore and OpenSSL only and holds every protocol and crypto rule;
+  `src/app` is glue. Server-supplied text is rendered as `Text.PlainText`.
+- Secrets live in one scrypt (N=2^17, r=8, p=1) + AES-256-GCM file, `vault.json`, in the
+  data dir (`~/.local/share/kyauth`, or `kyauth.busnes` on UT). `state.json` holds only the
+  non-secret failure counter and push tokens. There is no hardware keystore: the passcode is
+  the only protection against someone with the files, so the minimum is 6 characters.
+- Wrong passcodes: delays 0/5/30/300 s; the 5th consecutive failure erases local data. The
+  attempt is counted before it is checked.
+- The app locks whenever it leaves the foreground.
+- The UnifiedPush connector accepts calls only with its token and only from the current owner
+  of the chosen distributor's bus name.
+
+## Work Guidance
+
+- Build and test: `cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build && ctest --test-dir build`.
+- Ubuntu Touch click: `clickable build --arch arm64 --accept-review-errors` (Clickable >= 8.9).
+- moc cannot parse raw string literals containing `//` or `)`; use ordinary literals in
+  `Q_OBJECT` files.
+
+## Verification
+
+- `ctest`: core vectors (RFC 8291, RFC 7914, RFC 6238, KyAuth-Android golden strings) and
+  `qml_smoke`, which drives the real QML through setup, add account and lock and fails on any
+  QML warning.
+- CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build.
+
 # Engineering principles
 
 **Boundary discipline.** Validate, narrow types, and handle errors at system boundaries — CLI

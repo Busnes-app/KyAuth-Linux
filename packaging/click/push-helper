@@ -1,0 +1,7 @@
+#!/usr/bin/python3 -I
+# Ubuntu Push helper: argv[1] is the server's `data`, argv[2] the output. The server already
+# sends a fixed notification and an encrypted message, so pass them through unchanged.
+import sys
+
+with open(sys.argv[1], "rb") as src, open(sys.argv[2], "wb") as dst:
+    dst.write(src.read())

@@ -1,0 +1,76 @@
+cmake_minimum_required(VERSION 3.16)
+project(kyauth VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+
+# Ubuntu Touch: Ubuntu Push via Lomiri PushClient, click layout. Otherwise UnifiedPush over D-Bus.
+option(KYAUTH_UBUNTU_TOUCH "Build the Ubuntu Touch click flavor" OFF)
+option(KYAUTH_TESTS "Build tests" ON)
+
+# Qt 5.15 is the stable Ubuntu Touch target; Qt 6 builds from the same source.
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core)
+find_package(Qt${QT_VERSION_MAJOR} 5.15 REQUIRED COMPONENTS Core Network Gui Qml Quick QuickControls2 DBus)
+find_package(OpenSSL 3.0 REQUIRED)
+
+add_compile_options(-Wall -Wextra -Werror=format-security -fstack-protector-strong)
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(_FORTIFY_SOURCE=2)
+endif()
+add_link_options(-Wl,-z,relro,-z,now)
+add_compile_definitions(QT_NO_CAST_FROM_ASCII KYAUTH_VERSION="${PROJECT_VERSION}")
+
+add_library(kyauthcore STATIC
+    src/core/crypto.cpp
+    src/core/protocol.cpp
+    src/core/totp.cpp
+    src/core/vault.cpp)
+target_include_directories(kyauthcore PUBLIC src/core)
+target_link_libraries(kyauthcore PUBLIC Qt${QT_VERSION_MAJOR}::Core OpenSSL::Crypto)
+
+add_executable(kyauth
+    src/app/main.cpp
+    src/app/controller.cpp
+    src/app/unifiedpush.cpp
+    qml/qml.qrc)
+target_link_libraries(kyauth PRIVATE kyauthcore
+    Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Qml
+    Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickControls2 Qt${QT_VERSION_MAJOR}::DBus)
+if(KYAUTH_UBUNTU_TOUCH)
+    target_compile_definitions(kyauth PRIVATE KYAUTH_UBUNTU_TOUCH)
+endif()
+
+if(KYAUTH_UBUNTU_TOUCH)
+    # Click layout: everything at the package root.
+    install(TARGETS kyauth DESTINATION .)
+    configure_file(packaging/click/manifest.json.in ${CMAKE_BINARY_DIR}/manifest.json @ONLY)
+    install(FILES ${CMAKE_BINARY_DIR}/manifest.json
+                  packaging/click/kyauth.apparmor packaging/click/kyauth.desktop
+                  packaging/click/push-helper.json packaging/click/push-helper.apparmor
+                  packaging/kyauth.png
+            DESTINATION .)
+    install(PROGRAMS packaging/click/push-helper DESTINATION .)
+else()
+    include(GNUInstallDirs)
+    install(TARGETS kyauth DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES packaging/nura/app.busnes.kyauth.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    configure_file(packaging/nura/app.busnes.kyauth.service.in ${CMAKE_BINARY_DIR}/app.busnes.kyauth.service @ONLY)
+    install(FILES ${CMAKE_BINARY_DIR}/app.busnes.kyauth.service DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
+    install(FILES packaging/kyauth.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/192x192/apps
+            RENAME app.busnes.kyauth.png)
+endif()
+
+if(KYAUTH_TESTS)
+    enable_testing()
+    find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Test)
+    foreach(t crypto protocol totp vault)
+        add_executable(test_${t} tests/test_${t}.cpp)
+        target_link_libraries(test_${t} PRIVATE kyauthcore Qt${QT_VERSION_MAJOR}::Test)
+        add_test(NAME ${t} COMMAND test_${t})
+    endforeach()
+    # Loads the real QML offscreen and fails on any QML warning.
+    add_test(NAME qml_smoke COMMAND kyauth --smoke-test)
+    set_tests_properties(qml_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=KyAuth
+Comment=Authenticator codes and KyIdentity sign-in approvals
+Exec=kyauth
+Icon=app.busnes.kyauth
+Terminal=false
+Type=Application
+Categories=Utility;Security;
+StartupNotify=true
+X-Purism-FormFactor=Workstation;Mobile;
+X-KDE-FormFactor=desktop;tablet;handset;
