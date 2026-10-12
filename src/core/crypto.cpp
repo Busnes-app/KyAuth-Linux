@@ -96,6 +96,27 @@ std::optional<QByteArray> aesGcm(bool encrypt, const QByteArray &key, const QByt
     return out;
 }
 
+// RFC 8291 section 3.4: ECDH between `self` and `peerPub`, then the content key and nonce.
+std::optional<std::pair<QByteArray, QByteArray>> contentKeys(const P256Key &self, const QByteArray &peerPub,
+                                                             const QByteArray &uaPub, const QByteArray &asPub,
+                                                             const QByteArray &auth, const QByteArray &salt)
+{
+    Pkey own = loadP256(self.priv, self.pub);
+    Pkey peer = loadP256({}, peerPub);
+    if (!own || !peer)
+        return std::nullopt;
+    PkeyCtx ctx(EVP_PKEY_CTX_new(own.get(), nullptr));
+    size_t len = 32;
+    QByteArray ecdh(32, 0);
+    if (!ctx || EVP_PKEY_derive_init(ctx.get()) != 1 || EVP_PKEY_derive_set_peer(ctx.get(), peer.get()) != 1
+        || EVP_PKEY_derive(ctx.get(), u(ecdh), &len) != 1 || len != 32)
+        return std::nullopt;
+    const QByteArray ikm = hkdfExpand(hmac(auth, ecdh), QByteArray("WebPush: info", 14) + uaPub + asPub, 32);
+    const QByteArray prk = hmac(salt, ikm);
+    return std::make_pair(hkdfExpand(prk, QByteArray("Content-Encoding: aes128gcm", 28), 16),
+                          hkdfExpand(prk, QByteArray("Content-Encoding: nonce", 24), 12));
+}
+
 } // namespace
 
 QByteArray randomBytes(int n)
@@ -188,23 +209,10 @@ std::optional<QByteArray> webPushDecrypt(const P256Key &receiver, const QByteArr
     if (rs < 18 || quint32(record.size()) > rs) // one record only
         return std::nullopt;
 
-    Pkey self = loadP256(receiver.priv, receiver.pub);
-    Pkey peer = loadP256({}, senderPub);
-    if (!self || !peer)
+    auto keys = contentKeys(receiver, senderPub, receiver.pub, senderPub, auth, salt);
+    if (!keys)
         return std::nullopt;
-    PkeyCtx ctx(EVP_PKEY_CTX_new(self.get(), nullptr));
-    size_t len = 32;
-    QByteArray ecdh(32, 0);
-    if (!ctx || EVP_PKEY_derive_init(ctx.get()) != 1 || EVP_PKEY_derive_set_peer(ctx.get(), peer.get()) != 1
-        || EVP_PKEY_derive(ctx.get(), u(ecdh), &len) != 1 || len != 32)
-        return std::nullopt;
-
-    const QByteArray ikm = hkdfExpand(hmac(auth, ecdh),
-                                      QByteArray("WebPush: info", 14) + receiver.pub + senderPub, 32);
-    const QByteArray prk = hmac(salt, ikm);
-    const QByteArray cek = hkdfExpand(prk, QByteArray("Content-Encoding: aes128gcm", 28), 16);
-    const QByteArray nonce = hkdfExpand(prk, QByteArray("Content-Encoding: nonce", 24), 12);
-    auto plain = aesGcm(false, cek, nonce, {}, record);
+    auto plain = aesGcm(false, keys->first, keys->second, {}, record);
     if (!plain)
         return std::nullopt;
     // Strip zero padding; the last record ends with delimiter 0x02.
@@ -214,6 +222,29 @@ std::optional<QByteArray> webPushDecrypt(const P256Key &receiver, const QByteArr
     if (end < 0 || plain->at(end) != 2)
         return std::nullopt;
     return plain->left(end);
+}
+
+QByteArray webPushEncrypt(const QByteArray &receiverPub, const QByteArray &auth,
+                          const QByteArray &plaintext, int recordSize)
+{
+    const int pad = recordSize - 16 - 1 - plaintext.size(); // tag, delimiter
+    if (auth.size() != 16 || pad < 0)
+        return {};
+    const P256Key sender = generateP256();
+    const QByteArray salt = randomBytes(16);
+    auto keys = contentKeys(sender, receiverPub, receiverPub, sender.pub, auth, salt);
+    auto record = keys ? aesGcm(true, keys->first, keys->second, {}, plaintext + '\x02' + QByteArray(pad, 0))
+                       : std::nullopt;
+    if (!record)
+        return {};
+    const quint32 rs = quint32(recordSize);
+    QByteArray header = salt;
+    header += char(rs >> 24);
+    header += char(rs >> 16);
+    header += char(rs >> 8);
+    header += char(rs);
+    header += char(65);
+    return header + sender.pub + *record;
 }
 
 QByteArray scrypt(const QByteArray &passcode, const QByteArray &salt, const ScryptParams &params)

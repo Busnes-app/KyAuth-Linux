@@ -30,17 +30,20 @@ add_library(kyauthcore STATIC
 target_include_directories(kyauthcore PUBLIC src/core)
 target_link_libraries(kyauthcore PUBLIC Qt${QT_VERSION_MAJOR}::Core OpenSSL::Crypto)
 
-add_executable(kyauth
-    src/app/main.cpp
+# App logic without the UI, shared by the binary and the controller tests.
+add_library(kyauthapp STATIC
     src/app/controller.cpp
-    src/app/unifiedpush.cpp
-    qml/qml.qrc)
-target_link_libraries(kyauth PRIVATE kyauthcore
-    Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Qml
-    Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickControls2 Qt${QT_VERSION_MAJOR}::DBus)
+    src/app/unifiedpush.cpp)
+target_include_directories(kyauthapp PUBLIC src/app)
+target_link_libraries(kyauthapp PUBLIC kyauthcore
+    Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::DBus)
 if(KYAUTH_UBUNTU_TOUCH)
-    target_compile_definitions(kyauth PRIVATE KYAUTH_UBUNTU_TOUCH)
+    target_compile_definitions(kyauthapp PUBLIC KYAUTH_UBUNTU_TOUCH)
 endif()
+
+add_executable(kyauth src/app/main.cpp qml/qml.qrc)
+target_link_libraries(kyauth PRIVATE kyauthapp
+    Qt${QT_VERSION_MAJOR}::Qml Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickControls2)
 
 if(KYAUTH_UBUNTU_TOUCH)
     # Click layout: everything at the package root.
@@ -70,6 +73,10 @@ if(KYAUTH_TESTS)
         target_link_libraries(test_${t} PRIVATE kyauthcore Qt${QT_VERSION_MAJOR}::Test)
         add_test(NAME ${t} COMMAND test_${t})
     endforeach()
+    add_executable(test_controller tests/test_controller.cpp)
+    target_link_libraries(test_controller PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test)
+    add_test(NAME controller COMMAND test_controller)
+    set_tests_properties(controller PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     # Loads the real QML offscreen and fails on any QML warning.
     add_test(NAME qml_smoke COMMAND kyauth --smoke-test)
     # Software scene graph: headless runners have no OpenGL.

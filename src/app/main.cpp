@@ -1,6 +1,8 @@
 #include "controller.h"
 
+#include <QDir>
 #include <QGuiApplication>
+#include <QLockFile>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -70,6 +72,13 @@ int main(int argc, char *argv[])
     const QString dataDir = smoke ? smokeDir.path()
                                   : QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
                                         + QLatin1Char('/') + appDir;
+    // One process owns the data directory: two would each write their own copy of the vault.
+    QDir().mkpath(dataDir);
+    QLockFile owner(dataDir + QStringLiteral("/kyauth.lock"));
+    if (!owner.tryLock(0)) {
+        std::fprintf(stderr, "KyAuth is already running.\n");
+        return 1;
+    }
     // Smoke runs use a cheap KDF; the real one costs 128 MiB.
     Controller controller(dataDir, smoke ? ky::ScryptParams{1024, 8, 1} : ky::ScryptParams{});
 

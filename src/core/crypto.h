@@ -24,6 +24,10 @@ bool verifyDer(const QByteArray &spki, const QByteArray &message, const QByteArr
 // RFC 8291 aes128gcm body (single record) addressed to `receiver` with auth secret `auth`.
 std::optional<QByteArray> webPushDecrypt(const P256Key &receiver, const QByteArray &auth,
                                          const QByteArray &body);
+// The sender side, padded to one record of `recordSize` bytes. The app never sends pushes;
+// tests use it to stand in for the server. Empty on failure.
+QByteArray webPushEncrypt(const QByteArray &receiverPub, const QByteArray &auth,
+                          const QByteArray &plaintext, int recordSize = 2048);
 
 struct ScryptParams {
     quint64 n = 1u << 17; // 128 MiB with r = 8

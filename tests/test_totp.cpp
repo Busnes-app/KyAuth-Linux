@@ -69,6 +69,8 @@ private slots:
         QVERIFY(!parseOtpauth(QStringLiteral("otpauth://totp/x?secret=JBSWY3DP&period=0")));
         QVERIFY(!parseOtpauth(QStringLiteral("otpauth://totp/x?secret=JBSWY3D1")));
         QVERIFY(!parseOtpauth(QStringLiteral("https://totp/x?secret=JBSWY3DP")));
+        QVERIFY(!parseOtpauth(QStringLiteral("otpauth://totp/x?secret=JBSWY3DP&algorithm=MD5")));
+        QVERIFY(parseOtpauth(QStringLiteral("otpauth://totp/x?secret=JBSWY3DP&algorithm=sha256")));
     }
 
     void jsonRoundTrip()

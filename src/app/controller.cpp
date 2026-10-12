@@ -63,14 +63,14 @@ Controller::Controller(const QString &dataDir, const ScryptParams &kdf, QObject 
     m_ticker.setInterval(1000);
     connect(&m_ticker, &QTimer::timeout, this, [this] {
         if (m_challenge && m_challenge->expiresAtMs <= nowMs())
-            m_challenge.reset();
+            clearChallenge();
         emit tick();
     });
     m_ticker.start();
 
     // Lock whenever the app leaves the foreground.
     connect(qGuiApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState s) {
-        if (s != Qt::ApplicationActive && m_state == QLatin1String("unlocked"))
+        if (s != Qt::ApplicationActive)
             lock();
     });
 }
@@ -98,13 +98,13 @@ void Controller::loadState()
     m_latestToken = o.value(QStringLiteral("pushToken")).toString();
 }
 
-void Controller::saveState() const
+bool Controller::saveState() const
 {
     const QJsonObject o{{QStringLiteral("failures"), m_failures},
                         {QStringLiteral("lastFailureMs"), double(m_lastFailureMs)},
                         {QStringLiteral("unifiedPushToken"), m_upToken},
                         {QStringLiteral("pushToken"), m_latestToken}};
-    writeFileAtomic(m_dir + QStringLiteral("/state.json"), QJsonDocument(o).toJson(QJsonDocument::Compact));
+    return writeFileAtomic(m_dir + QStringLiteral("/state.json"), QJsonDocument(o).toJson(QJsonDocument::Compact));
 }
 
 // ---- lock ---------------------------------------------------------------------------------
@@ -131,9 +131,10 @@ void Controller::createPasscode(const QString &passcode, const QString &confirm)
     QPointer<Controller> self(this);
     const QString path = m_dir + QStringLiteral("/vault.json");
     const ScryptParams kdf = m_kdf;
-    QThread *t = QThread::create([self, path, passcode, kdf] {
+    const quint64 epoch = m_epoch;
+    QThread *t = QThread::create([self, path, passcode, kdf, epoch] {
         auto v = Vault::create(path, passcode, kdf);
-        QMetaObject::invokeMethod(qGuiApp, [self, v]() mutable {
+        QMetaObject::invokeMethod(qGuiApp, [self, v, epoch]() mutable {
             if (!self)
                 return;
             self->setBusy(false);
@@ -146,6 +147,10 @@ void Controller::createPasscode(const QString &passcode, const QString &confirm)
                        {QStringLiteral("totp"), QJsonArray()}};
             if (!v->save())
                 return self->say(tr("Could not save the vault."));
+            if (self->m_epoch != epoch) { // left the foreground meanwhile
+                v->clearKey();
+                return self->setState(QStringLiteral("locked"));
+            }
             self->onUnlocked(*v);
         });
     });
@@ -160,13 +165,15 @@ void Controller::unlock(const QString &passcode)
     // Count the attempt before checking it, so killing the app cannot skip the count.
     ++m_failures;
     m_lastFailureMs = nowMs();
-    saveState();
+    if (!saveState())
+        return say(tr("Could not record the attempt, so the passcode was not checked. Free some storage and try again."));
     setBusy(true);
     QPointer<Controller> self(this);
     const QString path = m_dir + QStringLiteral("/vault.json");
-    QThread *t = QThread::create([self, path, passcode] {
+    const quint64 epoch = m_epoch;
+    QThread *t = QThread::create([self, path, passcode, epoch] {
         auto v = Vault::open(path, passcode);
-        QMetaObject::invokeMethod(qGuiApp, [self, v]() mutable {
+        QMetaObject::invokeMethod(qGuiApp, [self, v, epoch]() mutable {
             if (!self)
                 return;
             self->setBusy(false);
@@ -174,6 +181,10 @@ void Controller::unlock(const QString &passcode)
                 self->m_failures = 0;
                 self->m_lastFailureMs = 0;
                 self->saveState();
+                if (self->m_epoch != epoch) { // left the foreground meanwhile: unlock again
+                    v->clearKey();
+                    return;
+                }
                 return self->onUnlocked(*v);
             }
             if (self->m_failures >= kWipeAfterFailures) {
@@ -202,10 +213,13 @@ void Controller::onUnlocked(Vault vault)
 
 void Controller::lock()
 {
+    ++m_epoch;
     if (m_vault)
         m_vault->clearKey();
     m_vault.reset();
-    m_challenge.reset();
+    if (m_challenge && m_pending.size() < 8)
+        m_pending.prepend(m_challengeBody); // re-checked, expiry included, on unlock
+    clearChallenge();
     if (m_state == QLatin1String("unlocked"))
         setState(QStringLiteral("locked"));
     emit pairingChanged();
@@ -228,12 +242,21 @@ void Controller::wipe()
     setPushStatus(tr("Push stopped. Restart KyAuth after setting it up again."));
 }
 
-bool Controller::saveVault()
+bool Controller::saveVault(const QJsonObject &before)
 {
-    if (m_vault && m_vault->save())
+    if (m_vault->save())
         return true;
-    say(tr("Could not save. Your last change may be lost."));
+    m_vault->data = before;
+    say(tr("Could not save, so nothing was changed. Is the storage full?"));
+    emit pairingChanged();
+    emit tick();
     return false;
+}
+
+void Controller::clearChallenge()
+{
+    m_challenge.reset();
+    m_challengeBody.clear();
 }
 
 // ---- TOTP ---------------------------------------------------------------------------------
@@ -264,10 +287,11 @@ bool Controller::addAccount(const QString &uri)
         say(tr("That is not a valid otpauth://totp link."));
         return false;
     }
+    const QJsonObject before = m_vault->data;
     QJsonArray list = m_vault->data.value(QStringLiteral("totp")).toArray();
     list.append(e->toJson());
     m_vault->data.insert(QStringLiteral("totp"), list);
-    if (!saveVault())
+    if (!saveVault(before))
         return false;
     say(tr("Added %1.").arg(e->title));
     emit tick();
@@ -278,12 +302,13 @@ void Controller::removeAccount(const QString &id)
 {
     if (!m_vault)
         return;
+    const QJsonObject before = m_vault->data;
     QJsonArray list = m_vault->data.value(QStringLiteral("totp")).toArray();
     for (int i = 0; i < list.size(); ++i)
         if (list.at(i).toObject().value(QStringLiteral("id")).toString() == id)
             list.removeAt(i--);
     m_vault->data.insert(QStringLiteral("totp"), list);
-    saveVault();
+    saveVault(before);
     emit tick();
 }
 
@@ -388,13 +413,15 @@ void Controller::handlePushBody(const QByteArray &body)
                             p.value(QStringLiteral("userId")).toString(), nowMs());
     if (c) {
         m_challenge = c;
+        m_challengeBody = body;
         emit tick();
     }
 }
 
 void Controller::refreshPushIfNeeded()
 {
-    if (!m_vault || m_busy)
+    // Pairing and answering call this again when they finish, so a skipped refresh resumes.
+    if (!m_vault || m_busy || m_refreshing)
         return;
     const QJsonObject p = m_vault->data.value(QStringLiteral("pairing")).toObject();
     auto push = currentPush();
@@ -416,7 +443,9 @@ void Controller::refreshPushIfNeeded()
     const QString url = server + QStringLiteral("/api/notifications/native/devices/")
                       + QString::fromLatin1(QUrl::toPercentEncoding(deviceId)) + QStringLiteral("/push-token");
     const PushCredential sent = *push;
+    m_refreshing = true;
     request("PUT", url, body, [this, sent, deviceId](int status, const QByteArray &reply) {
+        m_refreshing = false;
         if (status < 200 || status > 299)
             return setPushStatus(tr("Could not update push on the server: %1").arg(serverError(status, reply)));
         if (!m_vault)
@@ -424,10 +453,13 @@ void Controller::refreshPushIfNeeded()
         QJsonObject p = m_vault->data.value(QStringLiteral("pairing")).toObject();
         if (p.value(QStringLiteral("deviceId")).toString() != deviceId)
             return; // re-paired meanwhile
+        const QJsonObject before = m_vault->data;
         p.insert(QStringLiteral("push"), pushJson(sent));
         m_vault->data.insert(QStringLiteral("pairing"), p);
-        saveVault();
+        if (!saveVault(before))
+            return;
         setPushStatus(tr("Ready"));
+        refreshPushIfNeeded(); // the token may have changed again while this was in flight
     });
 }
 
@@ -484,6 +516,7 @@ void Controller::pair(const QString &code)
             return say(tr("Pairing failed: %1").arg(error));
         if (!m_vault)
             return say(tr("Locked before pairing finished. Pair again."));
+        const QJsonObject before = m_vault->data;
         m_vault->data.insert(QStringLiteral("pairing"),
                              QJsonObject{{QStringLiteral("serverUrl"), r.serverUrl},
                                          {QStringLiteral("username"), r.username},
@@ -491,9 +524,10 @@ void Controller::pair(const QString &code)
                                          {QStringLiteral("userId"), ids->second},
                                          {QStringLiteral("key"), keyJson(key)},
                                          {QStringLiteral("push"), pushJson(sent)}});
-        m_challenge.reset();
-        if (saveVault())
-            say(tr("Paired. Sign-in requests will appear here."));
+        if (!saveVault(before))
+            return;
+        clearChallenge();
+        say(tr("Paired. Sign-in requests will appear here."));
         emit pairingChanged();
         refreshPushIfNeeded(); // the endpoint may have changed while pairing
     });
@@ -503,9 +537,11 @@ void Controller::unpair()
 {
     if (!m_vault)
         return;
+    const QJsonObject before = m_vault->data;
     m_vault->data.remove(QStringLiteral("pairing"));
-    m_challenge.reset();
-    saveVault();
+    if (!saveVault(before))
+        return;
+    clearChallenge();
     say(tr("Unpaired. Also remove this device in your KyIdentity account."));
     emit pairingChanged();
     emit tick();
@@ -559,8 +595,9 @@ void Controller::respond(bool approve, const QString &digits)
                 const Decision d = parseDecision(status, reply, c.challengeId, &error);
                 // Answered (or refused) by the server: never offer it again. Keep it on network errors.
                 if (status != 0 && m_challenge && m_challenge->challengeId == c.challengeId)
-                    m_challenge.reset();
+                    clearChallenge();
                 emit tick();
+                refreshPushIfNeeded();
                 if (d == Decision::Error)
                     return say(tr("Not sent: %1").arg(error));
                 if (!approve)

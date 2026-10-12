@@ -44,6 +44,17 @@ private slots:
         QVERIFY(!webPushDecrypt(rfcReceiver(), auth, offCurve));
     }
 
+    void webPushRoundTrip()
+    {
+        const P256Key receiver = generateP256();
+        const QByteArray auth = randomBytes(16);
+        const QByteArray body = webPushEncrypt(receiver.pub, auth, "{\"type\":\"mfa_challenge\"}");
+        QCOMPARE(body.size(), 86 + 2048); // the server's fixed record size
+        QCOMPARE(*webPushDecrypt(receiver, auth, body), QByteArray("{\"type\":\"mfa_challenge\"}"));
+        QVERIFY(!webPushDecrypt(receiver, randomBytes(16), body));
+        QVERIFY(webPushEncrypt(receiver.pub, auth, QByteArray(2048, 'x')).isEmpty()); // does not fit
+    }
+
     void signVerifyRoundTrip()
     {
         const P256Key k = generateP256();

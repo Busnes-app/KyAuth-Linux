@@ -73,8 +73,10 @@ private:
     void say(const QString &text);
     void setPushStatus(const QString &s);
     void loadState();
-    void saveState() const;
-    bool saveVault();
+    bool saveState() const;
+    // Saves the vault; on failure restores `before` and reports it.
+    bool saveVault(const QJsonObject &before);
+    void clearChallenge();
     void wipe();
     void onUnlocked(ky::Vault vault);
 
@@ -82,9 +84,15 @@ private:
     void handlePushBody(const QByteArray &body);
     void refreshPushIfNeeded();
     void respond(bool approve, const QString &digits);
-    void request(const QByteArray &verb, const QString &url, const QJsonObject &body,
-                 std::function<void(int, const QByteArray &)> done);
     void notifyDesktop();
+
+protected:
+    // HTTPS JSON request; status 0 means no response. Virtual so tests can answer it.
+    virtual void request(const QByteArray &verb, const QString &url, const QJsonObject &body,
+                         std::function<void(int, const QByteArray &)> done);
+
+private:
+    friend class TestController;
 
     QString m_dir;
     ky::ScryptParams m_kdf;
@@ -94,6 +102,9 @@ private:
     QString m_pushStatus;
     std::optional<ky::Vault> m_vault;
     std::optional<ky::Challenge> m_challenge;
+    QByteArray m_challengeBody; // its encrypted push, requeued if locked before an answer
+    quint64 m_epoch = 0;        // bumped by lock(): a KDF result from an older epoch is dropped
+    bool m_refreshing = false;
     QList<QByteArray> m_pending; // encrypted pushes that arrived while locked
     QTimer m_ticker;
     QNetworkAccessManager m_net;

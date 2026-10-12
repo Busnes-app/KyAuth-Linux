@@ -77,8 +77,9 @@ std::optional<TotpEntry> parseOtpauth(const QString &uri)
     else
         e.title = label;
 
+    // Omitted means SHA1; anything else unsupported is refused, never silently swapped.
     const QString alg = q.queryItemValue(QStringLiteral("algorithm")).toUpper();
-    e.algorithm = (alg == QLatin1String("SHA256") || alg == QLatin1String("SHA512")) ? alg : QStringLiteral("SHA1");
+    e.algorithm = alg.isEmpty() ? QStringLiteral("SHA1") : alg;
     bool ok = true;
     if (q.hasQueryItem(QStringLiteral("digits")))
         e.digits = q.queryItemValue(QStringLiteral("digits")).toInt(&ok);
