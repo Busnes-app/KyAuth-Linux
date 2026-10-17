@@ -45,6 +45,23 @@ add_executable(kyauth src/app/main.cpp qml/qml.qrc)
 target_link_libraries(kyauth PRIVATE kyauthapp
     Qt${QT_VERSION_MAJOR}::Qml Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickControls2)
 
+# QR scanning uses QZXing's Qt 5 camera filter. Without it, codes are pasted.
+if(QT_VERSION_MAJOR EQUAL 5)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(QZXING IMPORTED_TARGET QZXing)
+    endif()
+endif()
+if(KYAUTH_UBUNTU_TOUCH AND NOT QZXING_FOUND)
+    message(FATAL_ERROR "The click needs QZXing for QR scanning.")
+endif()
+if(QZXING_FOUND)
+    find_package(Qt5 REQUIRED COMPONENTS Multimedia)
+    target_compile_definitions(kyauthapp PUBLIC KYAUTH_QR)
+    target_sources(kyauth PRIVATE qml/scanner.qrc)
+    target_link_libraries(kyauth PRIVATE PkgConfig::QZXING Qt5::Multimedia)
+endif()
+
 if(KYAUTH_UBUNTU_TOUCH)
     # Click layout: everything at the package root.
     install(TARGETS kyauth DESTINATION .)

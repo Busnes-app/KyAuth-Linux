@@ -2,5 +2,7 @@
     <qresource prefix="/">
         <file>Main.qml</file>
         <file>UbuntuPush.qml</file>
+        <file>logo.png</file>
+        <file alias="LICENSE.txt">../LICENSE.txt</file>
     </qresource>
 </RCC>

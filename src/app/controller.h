@@ -26,6 +26,8 @@ class Controller : public QObject {
     Q_PROPERTY(QString pushStatus READ pushStatus NOTIFY pushStatusChanged)
     Q_PROPERTY(QVariantMap challenge READ challenge NOTIFY tick)
     Q_PROPERTY(bool ubuntuTouch READ ubuntuTouch CONSTANT)
+    Q_PROPERTY(bool qrScanner READ qrScanner CONSTANT)
+    Q_PROPERTY(QString license READ license CONSTANT)
 
 public:
     Controller(const QString &dataDir, const ky::ScryptParams &kdf, QObject *parent = nullptr);
@@ -41,6 +43,8 @@ public:
     QString pushStatus() const { return m_pushStatus; }
     QVariantMap challenge() const;
     bool ubuntuTouch() const;
+    bool qrScanner() const;
+    QString license() const;
 
     Q_INVOKABLE void createPasscode(const QString &passcode, const QString &confirm);
     Q_INVOKABLE void unlock(const QString &passcode);

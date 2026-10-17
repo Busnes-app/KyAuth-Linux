@@ -84,6 +84,21 @@ bool Controller::ubuntuTouch() const
 #endif
 }
 
+QString Controller::license() const
+{
+    QFile f(QStringLiteral(":/LICENSE.txt")); // QML's XMLHttpRequest may not read resources
+    return f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()) : QString();
+}
+
+bool Controller::qrScanner() const
+{
+#ifdef KYAUTH_QR
+    return true;
+#else
+    return false;
+#endif
+}
+
 // ---- state.json ---------------------------------------------------------------------------
 
 void Controller::loadState()

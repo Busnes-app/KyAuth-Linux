@@ -1,5 +1,6 @@
 #include "controller.h"
 
+#include <QClipboard>
 #include <QDateTime>
 #include <QFile>
 #include <QJsonDocument>
@@ -120,6 +121,52 @@ private slots:
         QTRY_COMPARE(digits->property("text").toString(), QString());
         QVERIFY(!approve->property("enabled").toBool());
         QVERIFY(c.requests.isEmpty());
+    }
+
+    // The real QML: touch keyboards cannot paste, so the Paste buttons are the only way in.
+    void pasteButtonsFillTheirFields()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        setUp(c);
+        QObject *root = engine.rootObjects().constFirst();
+
+        // The link field is in the Add sheet on the vault; the pairing field is on the connect page.
+        const struct { const char *page, *field, *paste; } cases[] = {
+            {"vault", "otpUri", "otpPaste"}, {"connect", "pairCode", "pairPaste"}};
+        for (const auto &t : cases) {
+            root->setProperty("page", QLatin1String(t.page));
+            QObject *field = nullptr;
+            QTRY_VERIFY((field = root->findChild<QObject *>(QLatin1String(t.field))));
+            QObject *paste = root->findChild<QObject *>(QLatin1String(t.paste));
+            QVERIFY(paste);
+            QGuiApplication::clipboard()->setText(QLatin1String(t.field));
+            QVERIFY(QMetaObject::invokeMethod(paste, "clicked"));
+            QCOMPARE(field->property("text").toString(), QLatin1String(t.field));
+        }
+    }
+
+    // The real QML: pairing from the connect page moves on to settings, which offers Unpair.
+    void pairingLeavesConnectPage()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        setUp(c);
+        QObject *root = engine.rootObjects().constFirst();
+        root->setProperty("page", QStringLiteral("connect"));
+        pair(c);
+        emit c.pairingChanged(); // pair() bypasses the controller
+        QCOMPARE(root->property("page").toString(), QStringLiteral("settings"));
+        c.lock();
+        QTRY_COMPARE(root->property("page").toString(), QStringLiteral("vault"));
     }
 
     void duplicateAccountIsRefused()
