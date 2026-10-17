@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KyAuth Flatpak repository</title>
+<style>
+  body { margin: 0 auto; max-width: 42rem; padding: 2rem 1.25rem; font: 16px/1.5 system-ui, sans-serif;
+         color: #182326; background: #f8f6f0; }
+  h1 { margin-top: 0; }
+  pre { overflow-x: auto; padding: 1rem; border: 1px solid #e4dfd3; border-radius: 12px; background: #fff; }
+  a { color: #a33614; }
+  p.note { color: #566461; }
+</style>
+</head>
+<body>
+<h1>KyAuth for Nura and Linux desktops</h1>
+<p>Authenticator codes and KyIdentity push sign-in approvals. This is KyAuth's signed Flatpak
+repository: install from it once and <code>flatpak update</code> keeps KyAuth current.</p>
+<pre>flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak remote-add --if-not-exists kyauth @PAGES_URL@/kyauth.flatpakrepo
+flatpak install kyauth app.busnes.kyauth</pre>
+<p class="note">Flathub provides the KDE runtime. Every commit here is signed, and the key is in
+<a href="kyauth.flatpakrepo">kyauth.flatpakrepo</a>, so Flatpak refuses anything else.</p>
+<p>Ubuntu Touch: download the <code>.click</code> from the
+<a href="https://github.com/@REPOSITORY@/releases/latest">latest release</a>.</p>
+</body>
+</html>
