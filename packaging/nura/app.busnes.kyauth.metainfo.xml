@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.busnes.kyauth</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>KyAuth</name>
+  <summary>Authenticator codes and KyIdentity sign-in approvals</summary>
+  <developer id="app.busnes">
+    <name>Busnes.app</name>
+  </developer>
+  <description>
+    <p>
+      KyAuth keeps your two-factor authentication codes and approves KyIdentity sign-ins on
+      your phone.
+    </p>
+    <ul>
+      <li>TOTP codes (SHA-1, SHA-256 and SHA-512; 6 to 8 digits) from an otpauth:// link</li>
+      <li>KyIdentity push sign-in with number matching, over UnifiedPush</li>
+      <li>Everything encrypted under your passcode, and locked when KyAuth leaves the screen</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">app.busnes.kyauth.desktop</launchable>
+  <url type="homepage">https://github.com/Busnes-app/KyAuth-Linux</url>
+  <url type="bugtracker">https://github.com/Busnes-app/KyAuth-Linux/issues</url>
+  <categories>
+    <category>Utility</category>
+    <category>Security</category>
+  </categories>
+  <supports>
+    <control>touch</control>
+  </supports>
+  <recommends>
+    <control>keyboard</control>
+    <display_length compare="ge">360</display_length>
+  </recommends>
+  <branding>
+    <color type="primary" scheme_preference="light">#f8f6f0</color>
+    <color type="primary" scheme_preference="dark">#bf3f18</color>
+  </branding>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.4.2" date="2026-10-16" />
+  </releases>
+</component>

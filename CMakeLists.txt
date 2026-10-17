@@ -76,9 +76,13 @@ else()
     include(GNUInstallDirs)
     install(TARGETS kyauth DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(FILES packaging/nura/app.busnes.kyauth.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES packaging/nura/app.busnes.kyauth.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
     configure_file(packaging/nura/app.busnes.kyauth.service.in ${CMAKE_BINARY_DIR}/app.busnes.kyauth.service @ONLY)
     install(FILES ${CMAKE_BINARY_DIR}/app.busnes.kyauth.service DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
     install(FILES packaging/kyauth.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/192x192/apps
+            RENAME app.busnes.kyauth.png)
+    # AppStream (software centres, Flatpak) looks for 64, 128 or scalable icons.
+    install(FILES packaging/nura/app.busnes.kyauth-128.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/128x128/apps
             RENAME app.busnes.kyauth.png)
 endif()
 

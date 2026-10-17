@@ -56,6 +56,24 @@ have no scanner, because QZXing's camera filter is Qt 5 only.
   unaffected, but this device cannot be used for MFA-grade device sign-on.
 - A copied code is cleared from the clipboard after 30 seconds.
 
+## Install
+
+**Ubuntu Touch:** download `kyauth.busnes_<version>_arm64.click` from the
+[latest release](https://github.com/Busnes-app/KyAuth-Linux/releases/latest) and open it on the
+phone.
+
+**Nura and Linux desktops:** add KyAuth's signed Flatpak repository once; `flatpak update` then
+keeps it current.
+
+```sh
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak remote-add --if-not-exists kyauth https://busnes-app.github.io/KyAuth-Linux/kyauth.flatpakrepo
+flatpak install kyauth app.busnes.kyauth
+```
+
+Or install `kyauth-<arch>.flatpak` from the release; it updates from the same repository. See
+[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) for how releases are built.
+
 ## Build
 
 You need Qt 5.15 or Qt 6 (Core, Network, Gui, Qml, Quick, QuickControls2, DBus, Test),

@@ -1,0 +1,27 @@
+app-id: app.busnes.kyauth
+runtime: org.kde.Platform
+runtime-version: "6.11"
+sdk: org.kde.Sdk
+command: kyauth
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --share=network
+  # UnifiedPush (src/app/unifiedpush.cpp): KyAuth registers with the distributor, which calls
+  # back on app.busnes.kyauth. A Flatpak may always own its own app ID, so no --own-name.
+  - --talk-name=org.unifiedpush.Distributor.*
+  # Controller::notifyDesktop posts a fixed "Sign-in request" notification.
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - name: kyauth
+    buildsystem: cmake-ninja
+    # The ctest suite, QML smoke test included, runs inside the build.
+    run-tests: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: dir
+        path: ../..
+        skip: [build, .claude, .clickable, .flatpak-builder, build-flatpak]
