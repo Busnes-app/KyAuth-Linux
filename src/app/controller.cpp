@@ -84,6 +84,21 @@ bool Controller::ubuntuTouch() const
 #endif
 }
 
+QString Controller::license() const
+{
+    QFile f(QStringLiteral(":/LICENSE.txt")); // QML's XMLHttpRequest may not read resources
+    return f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()) : QString();
+}
+
+bool Controller::qrScanner() const
+{
+#ifdef KYAUTH_QR
+    return true;
+#else
+    return false;
+#endif
+}
+
 // ---- state.json ---------------------------------------------------------------------------
 
 void Controller::loadState()
@@ -289,6 +304,15 @@ bool Controller::addAccount(const QString &uri)
     }
     const QJsonObject before = m_vault->data;
     QJsonArray list = m_vault->data.value(QStringLiteral("totp")).toArray();
+    // Same codes means the same account, whatever its label.
+    for (const QJsonValue &v : list) {
+        const auto old = TotpEntry::fromJson(v.toObject());
+        if (old && old->secret == e->secret && old->algorithm == e->algorithm && old->digits == e->digits
+            && old->period == e->period) {
+            say(tr("%1 is already in your vault.").arg(old->title));
+            return false;
+        }
+    }
     list.append(e->toJson());
     m_vault->data.insert(QStringLiteral("totp"), list);
     if (!saveVault(before))

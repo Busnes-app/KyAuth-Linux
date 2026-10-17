@@ -3,8 +3,9 @@
 Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmarketOS) and
 **Ubuntu Touch**. A port of KyAuth-Android.
 
-- **Codes:** TOTP (RFC 6238; SHA-1, SHA-256 and SHA-512; 6 to 8 digits). Paste an
-  `otpauth://totp/` link to add an account.
+- **Codes:** TOTP (RFC 6238; SHA-1, SHA-256 and SHA-512; 6 to 8 digits). Scan the
+  account's QR code (Ubuntu Touch) or paste its `otpauth://totp/` link. An account already
+  in the vault is refused.
 - **Push sign-in:** pair with KyIdentity once. Each sign-in then arrives on the phone, and you
   approve it by typing the two-digit number shown on the sign-in screen.
 - **Passcode lock:** a passcode encrypts everything. The app locks as soon as it leaves the
@@ -32,12 +33,13 @@ or tailnet needs `KYIDENTITY_ALLOW_PRIVATE_CALLBACKS=true` on the server.
 
 ## Pairing
 
-1. In KyIdentity, open Devices and create a pairing code.
-2. Scan the QR code with your camera or QR app, such as Megapixels on Nura or Tagger on
-   Ubuntu Touch.
-3. Copy the text, paste it into KyAuth and tap Pair. The code expires after 90 seconds.
+1. In KyIdentity, open Devices and create a pairing code. It expires after 90 seconds.
+2. In KyAuth, open Settings, then Connect your account.
+3. On Ubuntu Touch, tap Scan QR code. On Nura, scan the code with a QR app such as
+   Megapixels, copy the text, tap Enter code manually, then Paste and Pair.
 
-KyAuth cannot scan QR codes itself yet.
+KyAuth scans with QZXing, which Ubuntu Touch ships; the click build requires it. Qt 6 builds
+have no scanner, because QZXing's camera filter is Qt 5 only.
 
 ## Security model
 
@@ -57,7 +59,8 @@ KyAuth cannot scan QR codes itself yet.
 ## Build
 
 You need Qt 5.15 or Qt 6 (Core, Network, Gui, Qml, Quick, QuickControls2, DBus, Test),
-OpenSSL 3, and CMake 3.16 or later.
+OpenSSL 3, and CMake 3.16 or later. On Qt 5, QZXing and Qt Multimedia add QR scanning when
+found.
 
 ```sh
 cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
