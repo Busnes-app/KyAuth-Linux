@@ -122,6 +122,20 @@ private slots:
         QVERIFY(c.requests.isEmpty());
     }
 
+    void duplicateAccountIsRefused()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/A:b?secret=JBSWY3DPEHPK3PXP")));
+        // Same secret under another label still yields the same codes.
+        QVERIFY(!c.addAccount(QStringLiteral("otpauth://totp/Other:name?secret=JBSWY3DPEHPK3PXP")));
+        QVERIFY(c.notice().contains(QStringLiteral("already")));
+        QCOMPARE(c.accounts().size(), 1);
+        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/A:c?secret=KRSXG5CTMVRXEZLU")));
+        QCOMPARE(c.accounts().size(), 2);
+    }
+
     void unlockFinishingAfterLockStaysLocked()
     {
         QTemporaryDir dir;

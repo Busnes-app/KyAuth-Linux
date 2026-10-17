@@ -289,6 +289,15 @@ bool Controller::addAccount(const QString &uri)
     }
     const QJsonObject before = m_vault->data;
     QJsonArray list = m_vault->data.value(QStringLiteral("totp")).toArray();
+    // Same codes means the same account, whatever its label.
+    for (const QJsonValue &v : list) {
+        const auto old = TotpEntry::fromJson(v.toObject());
+        if (old && old->secret == e->secret && old->algorithm == e->algorithm && old->digits == e->digits
+            && old->period == e->period) {
+            say(tr("%1 is already in your vault.").arg(old->title));
+            return false;
+        }
+    }
     list.append(e->toJson());
     m_vault->data.insert(QStringLiteral("totp"), list);
     if (!saveVault(before))
