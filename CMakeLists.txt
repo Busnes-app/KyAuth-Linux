@@ -52,7 +52,7 @@ if(KYAUTH_UBUNTU_TOUCH)
     install(FILES ${CMAKE_BINARY_DIR}/manifest.json
                   packaging/click/kyauth.apparmor packaging/click/kyauth.desktop
                   packaging/click/push-helper.json packaging/click/push-helper.apparmor
-                  packaging/kyauth.png
+                  packaging/click/kyauth.png # full-bleed: Lomiri draws the rounded shape
             DESTINATION .)
     install(PROGRAMS packaging/click/push-helper DESTINATION .)
 else()
