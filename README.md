@@ -11,6 +11,18 @@ Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmark
 - **Passcode lock:** a passcode encrypts everything. The app locks as soon as it leaves the
   screen.
 
+## Independent use and prerequisites
+
+Local TOTP works without a Ky server. Set a strong passphrase, add an `otpauth://totp/`
+setup link (or scan on Ubuntu Touch), and verify a generated code at the issuing site.
+Keep its recovery codes separately; this app has no vault backup/export/sync workflow.
+For push MFA you additionally need a compatible HTTPS KyIdentity server and the transport
+for your platform. Linux device sign-on for other apps is not implemented.
+
+The code supports Nura/postmarketOS and Ubuntu Touch, plus Linux desktop evaluation.
+Source/CI tests exercise protocol vectors and UI components; they do not establish real
+phone background delivery, camera behavior or a store release. Verify those on your target.
+
 ## How push works
 
 | | Nura | Ubuntu Touch |
@@ -57,6 +69,11 @@ have no scanner, because QZXing's camera filter is Qt 5 only.
 - A copied code is cleared from the clipboard after 30 seconds.
 
 ## Install
+
+**Distribution status (2026-10-20):** no GitHub release is published. The click and
+Flatpak commands below describe the intended release channel and need an actually
+published artifact/repository. Until then, use [Build](#build); do not treat a workflow
+file or successful package build as proof that the download endpoint is live.
 
 **Ubuntu Touch:** download `kyauth.busnes_<version>_arm64.click` from the
 [latest release](https://github.com/Busnes-app/KyAuth-Linux/releases/latest) and open it on the
