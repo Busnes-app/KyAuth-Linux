@@ -3,7 +3,7 @@
     "title": "KyAuth",
     "description": "Authenticator codes and KyIdentity push sign-in approvals.",
     "version": "@PROJECT_VERSION@",
-    "maintainer": "Busnes.app <yoshi@urlxl.com>",
+    "maintainer": "Busnes.app <hello@busnes.app>",
     "architecture": "@CLICK_ARCH@",
     "framework": "@CLICK_FRAMEWORK@",
     "hooks": {
