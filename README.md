@@ -70,10 +70,9 @@ have no scanner, because QZXing's camera filter is Qt 5 only.
 
 ## Install
 
-**Distribution status (2026-10-20):** no GitHub release is published. The click and
-Flatpak commands below describe the intended release channel and need an actually
-published artifact/repository. Until then, use [Build](#build); do not treat a workflow
-file or successful package build as proof that the download endpoint is live.
+**Distribution status:** releases start at v0.5.0. If the
+[releases page](https://github.com/Busnes-app/KyAuth-Linux/releases) has none yet, the click and
+Flatpak commands below have nothing to install; use [Build](#build) instead.
 
 **Ubuntu Touch:** download `kyauth.busnes_<version>_arm64.click` from the
 [latest release](https://github.com/Busnes-app/KyAuth-Linux/releases/latest) and open it on the
