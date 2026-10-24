@@ -60,6 +60,7 @@ CredentialProvider) are not ported.
   and `qml_smoke`, which drives the real QML through setup, add account and lock and fails on any
   QML warning.
 - CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build.
+- Code scanning (`.github/workflows/codeql.yml`): CodeQL on the C++ from a Qt 6 build, and on the workflows; push, pull request and weekly.
 
 # Engineering principles
 

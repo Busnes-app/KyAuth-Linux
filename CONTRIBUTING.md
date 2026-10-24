@@ -27,7 +27,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same on Qt 5 and Qt 6 and builds the Ubuntu Touch
-click. `release.yml` builds and smoke-tests the Flatpak on both architectures.
+click. `release.yml` builds and smoke-tests the Flatpak on both architectures. `codeql.yml` runs
+CodeQL on the C++ and the workflows; fix or explain its findings before merging.
 
 ## Coding standard
 
