@@ -40,6 +40,10 @@ CredentialProvider) are not ported.
   through `saveVault(before)`, which restores the in-memory data if the write fails.
 - The UnifiedPush connector accepts calls only with its token and only from the current owner
   of the chosen distributor's bus name.
+- `docs/ASSURANCE-CASE.md` cites code paths for each security claim; a change that moves a trust
+  boundary or a cited path updates it in the same PR. `docs/VERIFYING-RELEASES.md` describes the
+  signed Flatpak repository and stays marked untested until a release is published and checked.
+  The coding standard and its enforcing checks are in `CONTRIBUTING.md`.
 
 ## Work Guidance
 

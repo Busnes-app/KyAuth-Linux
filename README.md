@@ -108,6 +108,14 @@ icon, and the D-Bus activation file the distributor uses to start KyAuth.
 **Ubuntu Touch:** run `clickable build --arch arm64 --accept-review-errors` (Clickable 8.9 or
 later). Install the click from `build/aarch64-linux-gnu/app/` with `clickable install`.
 
+## Security and contributing
+
+- Report vulnerabilities privately through the repository's **Security** tab
+  ([policy](https://github.com/Busnes-app/.github/blob/main/SECURITY.md)).
+- [Contributing](CONTRIBUTING.md) — process, tests and coding standard.
+- [Verifying releases](docs/VERIFYING-RELEASES.md) — check the Flatpak signing key and what is signed (untested: no release is published yet).
+- [Assurance case](docs/ASSURANCE-CASE.md) — threat model, trust boundaries, and why the security requirements are met.
+
 ## Not ported
 
 KyIdentity device sign-on for other apps, and the passkey provider. Both depend on Android
