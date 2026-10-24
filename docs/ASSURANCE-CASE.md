@@ -105,8 +105,8 @@ affected by SHA-1's collision weakness.
   MFA-grade device sign-on.
 - **The click package is unsigned,** and no release is published yet
   ([VERIFYING-RELEASES.md](VERIFYING-RELEASES.md)).
-- No static analysis tool runs in CI. No dynamic memory-error checking (sanitizers or
-  fuzzing) runs, though the core is C++. No independent security audit has taken place.
+- No dynamic memory-error checking (sanitizers or fuzzing) runs, though the core is C++.
+  CodeQL static analysis runs on every push and pull request (`.github/workflows/codeql.yml`). No independent security audit has taken place.
 
 ## Evidence
 
