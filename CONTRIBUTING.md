@@ -1,48 +1,55 @@
 # Contributing to KyAuth for Linux
 
-KyAuth holds TOTP secrets and the device key KyIdentity trusts to approve sign-ins. A
-contribution must keep the contracts in [AGENTS.md](AGENTS.md) and the argument in
-[docs/ASSURANCE-CASE.md](docs/ASSURANCE-CASE.md) true.
+KyAuth for Linux is the KyIdentity authenticator for postmarketOS phones: TOTP codes, Push MFA approvals, KyIdentity sign-on, and passkeys. Contributions must keep authenticator secrets on the device and keep every sign-in approval behind an explicit human action.
 
-## How to contribute
+## Before contributing
 
-- **Bugs and ideas:** open an issue at <https://github.com/Busnes-app/KyAuth-Linux/issues>.
-  Report vulnerabilities privately instead: the repository's **Security** tab, **Report a
-  vulnerability** ([policy](https://github.com/Busnes-app/.github/blob/main/SECURITY.md)).
-- **Changes:** branch off `master` and open a pull request against `master`. CI must be green.
-- **Docs follow the DOX chain:** read [AGENTS.md](AGENTS.md) before editing, and update it when
-  a contract changes.
-- A change that moves a trust boundary or a security requirement updates
-  [docs/ASSURANCE-CASE.md](docs/ASSURANCE-CASE.md) in the same pull request.
+Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [SECURITY.md](SECURITY.md),
+the [README](README.md), and any AGENTS.md in the subtree you are about to
+touch. Open an issue before proposing a feature larger than a bug fix or
+documentation change.
 
-## Tests
+Keep changes small, reuse existing code, and fix the shared root cause rather
+than the reported symptom. New non-trivial logic ships with a runnable test or
+self-check.
 
-New protocol, crypto or lock behaviour needs a test in `tests/`. Protocol and crypto rules live
-in `src/core` so they can be tested without a network or a screen. Build and run everything:
+## Security requirements
 
-```sh
-cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
+- TOTP seeds, passkey material, and push-approval keys stay on the device; never transmit them off-device or write them to logs or crash reports.
+- A sign-in or MFA approval happens only on an explicit user action, never automatically; a notification alone is not consent.
+- Do not add telemetry, phone-home, analytics, or unconfigured third-party
+  services.
+- Do not add silent security fallbacks; fail closed with a readable error and a
+  remediation step.
+- Name and document any security trade-off in [SECURITY.md](SECURITY.md) before
+  it merges.
 
-CI (`.github/workflows/ci.yml`) runs the same on Qt 5 and Qt 6 and builds the Ubuntu Touch
-click. `release.yml` builds and smoke-tests the Flatpak on both architectures. `codeql.yml` runs
-CodeQL on the C++ and the workflows; fix or explain its findings before merging.
+## Verification
 
-## Coding standard
+Run the checks that apply to the files you changed, and the repository's
+full required checks before hand-off. Record the exact commands and their
+results in the pull request.
 
-| Language | Style guide | Enforced by |
-|---|---|---|
-| C++17 | The [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines), with Qt's naming (`m_` members, `camelCase` functions) | Compiler warnings from `CMakeLists.txt`: `-Wall -Wextra -Werror=format-security`, plus `QT_NO_CAST_FROM_ASCII`, in the `test` jobs of `ci.yml` |
-| QML | Qt's [QML coding conventions](https://doc.qt.io/qt-6/qml-codingconventions.html) | The `qml_smoke` test, which fails on any QML warning |
+## AI attribution
 
-Only format-string warnings fail the build; fix the others too. There is no formatter or
-linter. Keep to the style of the file you are editing, keep OpenSSL objects in the
-`unique_ptr` wrappers of `src/core/crypto.cpp`, and show server-supplied text with
-`Text.PlainText`.
+AI-assisted contributions are welcome; undisclosed ones are not. Disclose
+material AI assistance in the pull request — the tool, what it changed, and what
+you personally ran, read, and verified — and add a commit trailer naming any
+tool that materially contributed. You are the author of the code you submit for
+every purpose, regardless of how it was produced.
+
+## Pull requests
+
+Branch off `main` with a focused name, and use a Conventional Commit subject
+(`fix:`, `feat:`, `docs:`, `refactor:`, `test:`, or `chore:`). The pull request
+explains why the change exists, the verification performed, the security impact,
+and any known limitations.
+
+Every pull request gets an adversarial review pass; see
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md#hostile-reviews-are-about-code-never-people)
+for what that is and the boundary it keeps.
 
 ## Licence
 
-KyAuth is MIT-licensed ([LICENSE.txt](LICENSE.txt)). By contributing you agree that your
-contribution is licensed the same way.
+KyAuth for Linux is licensed under the MIT License. See [LICENSE.txt](LICENSE.txt).
+
