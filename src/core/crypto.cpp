@@ -4,7 +4,7 @@
 #include <memory>
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
-#include <openssl/hmac.h>
+#include <openssl/kdf.h>
 #include <openssl/param_build.h>
 #include <openssl/rand.h>
 #include <openssl/x509.h>
@@ -23,6 +23,8 @@ using CipherCtx = std::unique_ptr<EVP_CIPHER_CTX, Free<EVP_CIPHER_CTX, EVP_CIPHE
 using ParamBld = std::unique_ptr<OSSL_PARAM_BLD, Free<OSSL_PARAM_BLD, OSSL_PARAM_BLD_free>>;
 using Params = std::unique_ptr<OSSL_PARAM, Free<OSSL_PARAM, OSSL_PARAM_free>>;
 using Bn = std::unique_ptr<BIGNUM, Free<BIGNUM, BN_clear_free>>;
+using Kdf = std::unique_ptr<EVP_KDF, Free<EVP_KDF, EVP_KDF_free>>;
+using KdfCtx = std::unique_ptr<EVP_KDF_CTX, Free<EVP_KDF_CTX, EVP_KDF_CTX_free>>;
 
 const uchar *u(const QByteArray &b) { return reinterpret_cast<const uchar *>(b.constData()); }
 uchar *u(QByteArray &b) { return reinterpret_cast<uchar *>(b.data()); }
@@ -52,19 +54,22 @@ Pkey loadP256(const QByteArray &priv, const QByteArray &pub)
     return key;
 }
 
-QByteArray hmac(const QByteArray &key, const QByteArray &data)
+// RFC 5869 HKDF-SHA256, extract and expand.
+QByteArray hkdf(const QByteArray &salt, const QByteArray &ikm, const QByteArray &info, int length)
 {
-    QByteArray out(32, 0);
-    unsigned int len = 0;
-    if (!HMAC(EVP_sha256(), key.constData(), key.size(), u(data), data.size(), u(out), &len) || len != 32)
+    Kdf kdf(EVP_KDF_fetch(nullptr, "HKDF", nullptr));
+    KdfCtx ctx(kdf ? EVP_KDF_CTX_new(kdf.get()) : nullptr);
+    const auto octets = [](const char *key, const QByteArray &b) {
+        return OSSL_PARAM_construct_octet_string(key, const_cast<char *>(b.constData()), size_t(b.size()));
+    };
+    const OSSL_PARAM params[] = {
+        OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, const_cast<char *>("SHA256"), 0),
+        octets(OSSL_KDF_PARAM_SALT, salt), octets(OSSL_KDF_PARAM_KEY, ikm), octets(OSSL_KDF_PARAM_INFO, info),
+        OSSL_PARAM_construct_end()};
+    QByteArray out(length, 0);
+    if (!ctx || EVP_KDF_derive(ctx.get(), u(out), size_t(length), params) != 1)
         return {};
     return out;
-}
-
-// HKDF-Expand for a single block (length <= 32).
-QByteArray hkdfExpand(const QByteArray &prk, const QByteArray &info, int length)
-{
-    return hmac(prk, info + '\x01').left(length);
 }
 
 std::optional<QByteArray> aesGcm(bool encrypt, const QByteArray &key, const QByteArray &iv,
@@ -111,10 +116,9 @@ std::optional<std::pair<QByteArray, QByteArray>> contentKeys(const P256Key &self
     if (!ctx || EVP_PKEY_derive_init(ctx.get()) != 1 || EVP_PKEY_derive_set_peer(ctx.get(), peer.get()) != 1
         || EVP_PKEY_derive(ctx.get(), u(ecdh), &len) != 1 || len != 32)
         return std::nullopt;
-    const QByteArray ikm = hkdfExpand(hmac(auth, ecdh), QByteArray("WebPush: info", 14) + uaPub + asPub, 32);
-    const QByteArray prk = hmac(salt, ikm);
-    return std::make_pair(hkdfExpand(prk, QByteArray("Content-Encoding: aes128gcm", 28), 16),
-                          hkdfExpand(prk, QByteArray("Content-Encoding: nonce", 24), 12));
+    const QByteArray ikm = hkdf(auth, ecdh, QByteArray("WebPush: info", 14) + uaPub + asPub, 32);
+    return std::make_pair(hkdf(salt, ikm, QByteArray("Content-Encoding: aes128gcm", 28), 16),
+                          hkdf(salt, ikm, QByteArray("Content-Encoding: nonce", 24), 12));
 }
 
 } // namespace
