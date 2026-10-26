@@ -99,6 +99,11 @@ if(KYAUTH_TESTS)
         Qt${QT_VERSION_MAJOR}::Qml Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickControls2)
     add_test(NAME controller COMMAND test_controller)
     set_tests_properties(controller PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+    # Real TLS connections through Controller::request, including pre-send refusals.
+    add_executable(test_tls tests/test_tls.cpp)
+    target_link_libraries(test_tls PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test)
+    add_test(NAME tls COMMAND test_tls)
+    set_tests_properties(tls PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 180)
     # Loads the real QML offscreen and fails on any QML warning.
     add_test(NAME qml_smoke COMMAND kyauth --smoke-test)
     # Software scene graph: headless runners have no OpenGL.

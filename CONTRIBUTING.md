@@ -1,6 +1,9 @@
 # Contributing to KyAuth for Linux
 
-KyAuth for Linux is the KyIdentity authenticator for postmarketOS phones: TOTP codes, Push MFA approvals, KyIdentity sign-on, and passkeys. Contributions must keep authenticator secrets on the device and keep every sign-in approval behind an explicit human action.
+KyAuth for Linux provides TOTP codes and KyIdentity Push MFA approvals for
+postmarketOS and Ubuntu Touch phones. Device sign-on and passkeys are not ported.
+Contributions must keep authenticator secrets on the device and keep every approval
+behind an explicit human action.
 
 ## Before contributing
 
@@ -15,7 +18,7 @@ self-check.
 
 ## Security requirements
 
-- TOTP seeds, passkey material, and push-approval keys stay on the device; never transmit them off-device or write them to logs or crash reports.
+- TOTP seeds and private push-approval keys stay on the device; never transmit them off-device or write them to logs or crash reports.
 - A sign-in or MFA approval happens only on an explicit user action, never automatically; a notification alone is not consent.
 - Do not add telemetry, phone-home, analytics, or unconfigured third-party
   services.
@@ -40,7 +43,7 @@ every purpose, regardless of how it was produced.
 
 ## Pull requests
 
-Branch off `main` with a focused name, and use a Conventional Commit subject
+Branch off `master` with a focused name, and use a Conventional Commit subject
 (`fix:`, `feat:`, `docs:`, `refactor:`, `test:`, or `chore:`). The pull request
 explains why the change exists, the verification performed, the security impact,
 and any known limitations.

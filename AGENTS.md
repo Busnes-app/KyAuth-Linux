@@ -23,6 +23,15 @@ CredentialProvider) are not ported.
   KyIdentity `feat/linux-authenticator`.
 - Registration sends `platform: "linux"` and no attestation; the device is graded `none`.
 - Qt 5.15 is the floor (UT's only stable Qt). Code must build unchanged on Qt 6. OpenSSL >= 3.0.
+- `Controller::request` owns application TLS policy before dispatch: actual QtNetwork
+  OpenSSL >=3 backend, TLS >=1.2, peer verification and fixed
+  `CipherString=DEFAULT@SECLEVEL=2`. `src/core/crypto.cpp` additionally enforces literal
+  certificate sizes. Startup materializes OS CAs; requests filter anchors with no
+  fallback or on-demand roots, force HTTP/1.1/full handshakes and check peer chains
+  in the pre-data `encrypted` signal. Pool only checked connections in `m_net`.
+  Keep CA/name/time validation and manual redirects.
+  Refuse unavailable backends with an error while retaining offline TOTP. See
+  `SECURITY.md` for profile precedence and external-push scope.
 - `src/core` depends on QtCore and OpenSSL only and holds every protocol and crypto rule;
   `src/app` is glue. Server-supplied text is rendered as `Text.PlainText`.
 - Secrets live in one scrypt (N=2^17, r=8, p=1) + AES-256-GCM file, `vault.json`, in the
@@ -71,6 +80,10 @@ CredentialProvider) are not ported.
   countdown visibility, and explicit legacy deletion. `KYAUTH_TEST_CAPTURE=<path>`
   optionally captures that test's synthetic account screen for local inspection.
 - CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build.
+- `tls` exercises the real `Controller::request` against weak/strong TLS servers,
+  including chain keys, protocol versions, trust/name/expiry, redirects and repeats.
+  Refusals must send no HTTP bytes; weak fixtures need successful low-security
+  controls. It uses the OpenSSL CLI for throwaway certificates, not live secrets.
 - Code scanning (`.github/workflows/codeql.yml`): CodeQL on the C++ from a Qt 6 build, and on the workflows; push, pull request and weekly.
 
 # Engineering principles
