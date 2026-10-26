@@ -29,6 +29,11 @@ CredentialProvider) are not ported.
   data dir (`~/.local/share/kyauth`, or `kyauth.busnes` on UT). `state.json` holds only the
   non-secret failure counter and push tokens. There is no hardware keystore: the passcode is
   the only protection against someone with the files, so the minimum is 6 characters.
+- TOTP imports and code generation require at least 16 decoded secret bytes for every
+  HMAC algorithm. Keep `TotpEntry::fromJson` structural: old short-secret records must
+  remain readable, visible and unchanged. Show provider re-enrolment guidance instead
+  of a code/copy countdown; refuse copying without altering the clipboard. Removal
+  remains an explicit user choice. No vault-format migration or secret padding.
 - Wrong passcodes: delays 0/5/30/300 s; the 5th consecutive failure erases local data. The
   attempt is counted, and must be saved, before the passcode is checked.
 - The app locks whenever it leaves the foreground. `lock()` bumps an epoch; a key derivation
@@ -61,6 +66,10 @@ CredentialProvider) are not ported.
   lock, save-failure, push-requeue and refresh rules, plus the real QML for request binding;
   and `qml_smoke`, which drives the real QML through setup, add account and lock and fails on any
   QML warning.
+- TOTP policy regressions cover the decoded 15/16-byte boundary, all supported HMACs,
+  mixed legacy/strong encrypted-vault reload, refused import/copy, QML error text and
+  countdown visibility, and explicit legacy deletion. `KYAUTH_TEST_CAPTURE=<path>`
+  optionally captures that test's synthetic account screen for local inspection.
 - CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build.
 - Code scanning (`.github/workflows/codeql.yml`): CodeQL on the C++ from a Qt 6 build, and on the workflows; push, pull request and weekly.
 

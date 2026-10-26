@@ -53,7 +53,7 @@ void runSmokeTest(Controller &c, QGuiApplication &app, QObject *root)
     QObject::connect(&c, &Controller::stateChanged, &app, [&c, &app, root] {
         if (c.state() != QLatin1String("unlocked"))
             return;
-        check(c.addAccount(QStringLiteral("otpauth://totp/Smoke:test?secret=JBSWY3DPEHPK3PXP")), "Adding an account failed.");
+        check(c.addAccount(QStringLiteral("otpauth://totp/Smoke:test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")), "Adding an account failed.");
         const auto *window = qobject_cast<QQuickWindow *>(root);
         auto item = [window](const char *name) { return window ? findItem(window->contentItem(), name) : nullptr; };
         int delay = 0;

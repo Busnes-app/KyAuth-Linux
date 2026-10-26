@@ -515,19 +515,27 @@ ApplicationWindow {
                             }
                             Label {
                                 objectName: "accountCode"
-                                text: acc.account.code || ""
+                                text: acc.account.requiresReenrolment ? qsTr("Unavailable") : (acc.account.code || "")
                                 font.pixelSize: 40
                                 color: win.accent
                                 textFormat: Text.PlainText
                             }
                             Label {
-                                text: qsTr("Tap to copy · expires in %1 s").arg(acc.account.remaining || 0)
+                                objectName: "accountCodeHint"
+                                text: acc.account.requiresReenrolment
+                                      ? qsTr("This secret is too short. Set up two-step verification again with the account provider.")
+                                      : qsTr("Tap to copy · expires in %1 s").arg(acc.account.remaining || 0)
                                 font.pixelSize: 13
-                                font.capitalization: Font.AllUppercase
-                                font.letterSpacing: 0.6
+                                font.capitalization: acc.account.requiresReenrolment ? Font.MixedCase : Font.AllUppercase
+                                font.letterSpacing: acc.account.requiresReenrolment ? 0 : 0.6
                                 color: win.muted
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
                             }
                             Rectangle {
+                                objectName: "accountCountdown"
+                                visible: !acc.account.requiresReenrolment
                                 Layout.fillWidth: true
                                 Layout.topMargin: 6
                                 height: 4

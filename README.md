@@ -19,6 +19,15 @@ Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmark
 Local TOTP works without a Ky server. Set a strong passphrase, add an `otpauth://totp/`
 setup link (or scan on Ubuntu Touch), and verify a generated code at the issuing site.
 Keep its recovery codes separately; this app has no vault backup/export/sync workflow.
+New setup links require at least 128 bits of secret material (16 decoded bytes),
+as required by RFC 4226. Short secrets are refused for every supported HMAC algorithm.
+An older account with a short secret stays in your encrypted vault with its original
+name, issuer, ID and secret, but shows **Unavailable** instead of a code. Use the
+provider's recovery/sign-in process to set up two-step verification again, confirm
+the new code there, then explicitly remove the old entry when it is no longer needed.
+Do not pad or otherwise change the old secret yourself: it must match the provider.
+This update does not rewrite or remove old accounts or change the vault format.
+
 For push MFA you additionally need a compatible HTTPS KyIdentity server and the transport
 for your platform. Linux device sign-on for other apps is not implemented.
 
