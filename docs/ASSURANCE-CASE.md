@@ -82,6 +82,7 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 | Tampered vault demanding huge work | scrypt parameters bounded on open (N ≤ 2^18, r ≤ 8, p = 1, 16-byte salt) | `Vault::open` |
 | Passcode guessing on the phone | Delays of 5, 30 and 300 s before the 3rd to 5th tries; the 5th failure erases data; the attempt is saved before it is checked | `retryDelaySeconds`, `kWipeAfterFailures` (`src/core/vault.h`), `Controller::unlock` |
 | Weak passcodes | At least 6 characters; common and sequential PINs refused | `passcodeProblem` |
+| Undersized TOTP keys | Import and generation require 16 decoded bytes for SHA1/SHA256/SHA512. Storage validation retains legacy records, while the account screen shows provider re-enrolment guidance and copying is refused without changing the clipboard | `src/core/totp.cpp` (`parseOtpauth`, `totpCode`, `TotpEntry::fromJson`), `Controller::accounts` / `copyCode`, `qml/Main.qml`; `tests/test_totp.cpp`, `tests/test_controller.cpp` |
 | Plaintext or forged push | RFC 8291 decryption only; one record; the padding delimiter is checked | `webPushDecrypt` |
 | Push for another device, stale or replayed | Device ID, account, type and purpose must match; the expiry must be in the future and at most 10 minutes ahead | `parseChallenge`, `src/core/protocol.cpp` |
 | Answer redirection | HTTPS required on every request; registration URL same-origin; redirects not followed | `Controller::request`, `parsePairing` |

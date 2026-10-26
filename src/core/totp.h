@@ -7,6 +7,8 @@
 
 namespace ky {
 
+constexpr int kMinTotpSecretBytes = 16; // RFC 4226 section 4: at least 128 bits.
+
 struct TotpEntry {
     QString id;
     QString title;
@@ -21,8 +23,9 @@ struct TotpEntry {
 };
 
 std::optional<QByteArray> base32Decode(const QString &text);
-// otpauth://totp/... only. HOTP and malformed URIs return nullopt.
+// otpauth://totp/... only. HOTP, malformed URIs and undersized secrets return nullopt.
 std::optional<TotpEntry> parseOtpauth(const QString &uri);
+// Empty for an invalid/undersized entry; legacy records remain loadable through fromJson.
 QString totpCode(const TotpEntry &entry, qint64 unixSeconds);
 QString displayCode(const QString &code); // "123 456"
 

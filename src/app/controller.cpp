@@ -289,6 +289,7 @@ QVariantList Controller::accounts() const
         out.append(QVariantMap{{QStringLiteral("id"), e->id},
                                {QStringLiteral("title"), e->title},
                                {QStringLiteral("code"), displayCode(totpCode(*e, now))},
+                               {QStringLiteral("requiresReenrolment"), e->secret.size() < kMinTotpSecretBytes},
                                {QStringLiteral("remaining"), int(e->period - now % e->period)},
                                {QStringLiteral("period"), e->period}});
     }
@@ -299,7 +300,8 @@ bool Controller::addAccount(const QString &uri)
 {
     auto e = parseOtpauth(uri);
     if (!m_vault || !e) {
-        say(tr("That is not a valid otpauth://totp link."));
+        say(tr("Use a valid otpauth://totp link with a secret of at least 128 bits (16 decoded bytes). "
+               "If the secret is too short, set up two-step verification again with the account provider."));
         return false;
     }
     const QJsonObject before = m_vault->data;
@@ -343,6 +345,10 @@ void Controller::copyCode(const QString &id)
         if (a.value(QStringLiteral("id")).toString() != id)
             continue;
         const QString copied = a.value(QStringLiteral("code")).toString().remove(QLatin1Char(' '));
+        if (copied.isEmpty()) {
+            say(tr("This secret is too short. Set up two-step verification again with the account provider."));
+            return;
+        }
         QGuiApplication::clipboard()->setText(copied);
         say(tr("Code copied. It is cleared from the clipboard in 30 seconds."));
         QTimer::singleShot(30000, this, [this, copied] {

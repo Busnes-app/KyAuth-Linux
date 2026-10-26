@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "totp.h"
 
 #include <QClipboard>
 #include <QDateTime>
@@ -7,6 +8,8 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <unistd.h>
@@ -90,6 +93,79 @@ class TestController : public QObject {
     }
 
 private slots:
+    void legacyShortAccountStaysVisibleAndUncopyableAcrossVaultSaveAndReload()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        TotpEntry legacy;
+        legacy.id = QStringLiteral("legacy");
+        legacy.title = QStringLiteral("Retained account");
+        legacy.issuer = QStringLiteral("Original provider");
+        legacy.secret = QByteArray("0123456789");
+        legacy.algorithm = QStringLiteral("SHA1");
+        const auto strong = parseOtpauth(QStringLiteral("otpauth://totp/Strong?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
+        QVERIFY(strong);
+        const QJsonArray entries{legacy.toJson(), strong->toJson()};
+        c.m_vault->data.insert(QStringLiteral("totp"), entries);
+        QVERIFY(c.m_vault->save());
+        c.lock();
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+        QCOMPARE(c.accounts().size(), 2);
+        const QVariantMap old = c.accounts().first().toMap();
+        QCOMPARE(old.value(QStringLiteral("title")).toString(), legacy.title);
+        QVERIFY(old.value(QStringLiteral("requiresReenrolment")).toBool());
+        QVERIFY(old.value(QStringLiteral("code")).toString().isEmpty());
+        const QVariantMap working = c.accounts().last().toMap();
+        QVERIFY(!working.value(QStringLiteral("requiresReenrolment")).toBool());
+        QVERIFY(!working.value(QStringLiteral("code")).toString().isEmpty());
+
+        QGuiApplication::clipboard()->setText(QStringLiteral("unchanged"));
+        c.copyCode(legacy.id);
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("unchanged"));
+        QVERIFY(c.notice().contains(QStringLiteral("account provider")));
+        c.copyCode(strong->id);
+        QCOMPARE(QGuiApplication::clipboard()->text().size(), 6);
+        QVERIFY(!c.addAccount(QStringLiteral("otpauth://totp/Rejected?secret=JBSWY3DPEHPK3PXP")));
+        QCOMPARE(c.m_vault->data.value(QStringLiteral("totp")).toArray(), entries);
+        const auto persisted = Vault::open(dir.filePath(QStringLiteral("vault.json")), pass);
+        QVERIFY(persisted);
+        QCOMPARE(persisted->data.value(QStringLiteral("totp")).toArray(), entries);
+
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+        QVERIFY(window);
+        // Qt 6 Repeater delegates belong to the visual tree rather than QObject children.
+        std::function<QQuickItem *(QQuickItem *, const QString &)> findItem;
+        findItem = [&findItem](QQuickItem *item, const QString &name) -> QQuickItem * {
+            if (item->objectName() == name)
+                return item;
+            for (QQuickItem *child : item->childItems())
+                if (auto *found = findItem(child, name))
+                    return found;
+            return nullptr;
+        };
+        QQuickItem *code = nullptr;
+        QTRY_VERIFY((code = findItem(window->contentItem(), QStringLiteral("accountCode"))));
+        QCOMPARE(code->property("text").toString(), QStringLiteral("Unavailable"));
+        const auto *hint = findItem(window->contentItem(), QStringLiteral("accountCodeHint"));
+        QVERIFY(hint);
+        QVERIFY(hint->property("text").toString().contains(QStringLiteral("account provider")));
+        const auto *countdown = findItem(window->contentItem(), QStringLiteral("accountCountdown"));
+        QVERIFY(countdown);
+        QVERIFY(!countdown->isVisible());
+        QTest::qWait(100); // Allow the real QML layout to settle for optional local inspection.
+        if (qEnvironmentVariableIsSet("KYAUTH_TEST_CAPTURE"))
+            window->grabWindow().save(qEnvironmentVariable("KYAUTH_TEST_CAPTURE"));
+        c.removeAccount(legacy.id); // Removal remains an explicit user choice.
+        QCOMPARE(c.accounts().size(), 1);
+        QCOMPARE(c.m_vault->data.value(QStringLiteral("totp")).toArray(), QJsonArray{strong->toJson()});
+    }
+
     void initTestCase()
     {
         QQuickStyle::setStyle(QLatin1String(QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) ? "Basic" : "Default"));
@@ -174,12 +250,12 @@ private slots:
         QTemporaryDir dir;
         FakeController c(dir.path(), fast);
         setUp(c);
-        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/A:b?secret=JBSWY3DPEHPK3PXP")));
+        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/A:b?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")));
         // Same secret under another label still yields the same codes.
-        QVERIFY(!c.addAccount(QStringLiteral("otpauth://totp/Other:name?secret=JBSWY3DPEHPK3PXP")));
+        QVERIFY(!c.addAccount(QStringLiteral("otpauth://totp/Other:name?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")));
         QVERIFY(c.notice().contains(QStringLiteral("already")));
         QCOMPARE(c.accounts().size(), 1);
-        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/A:c?secret=KRSXG5CTMVRXEZLU")));
+        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/A:c?secret=KRSXG5CTMVRXEZLUKRSXG5CTMVRXEZLU")));
         QCOMPARE(c.accounts().size(), 2);
     }
 
@@ -188,7 +264,7 @@ private slots:
         QTemporaryDir dir;
         FakeController c(dir.path(), fast);
         setUp(c);
-        c.addAccount(QStringLiteral("otpauth://totp/A:b?secret=JBSWY3DPEHPK3PXP"));
+        c.addAccount(QStringLiteral("otpauth://totp/A:b?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
         c.lock();
         c.unlock(pass);
         QVERIFY(c.busy());

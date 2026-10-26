@@ -19,6 +19,7 @@ QCryptographicHash::Algorithm hashFor(const QString &algorithm)
 
 bool valid(const TotpEntry &e)
 {
+    // Storage validation preserves old short keys; import and generation enforce the key floor.
     return !e.secret.isEmpty() && e.digits >= 6 && e.digits <= 8 && e.period > 0 && e.period <= 3600
         && (e.algorithm == QLatin1String("SHA1") || e.algorithm == QLatin1String("SHA256")
             || e.algorithm == QLatin1String("SHA512"));
@@ -59,7 +60,7 @@ std::optional<TotpEntry> parseOtpauth(const QString &uri)
         return std::nullopt;
     const QUrlQuery q(url);
     auto secret = base32Decode(q.queryItemValue(QStringLiteral("secret"), QUrl::FullyDecoded));
-    if (!secret)
+    if (!secret || secret->size() < kMinTotpSecretBytes)
         return std::nullopt;
 
     TotpEntry e;
@@ -92,6 +93,8 @@ std::optional<TotpEntry> parseOtpauth(const QString &uri)
 
 QString totpCode(const TotpEntry &entry, qint64 unixSeconds)
 {
+    if (!valid(entry) || entry.secret.size() < kMinTotpSecretBytes)
+        return {};
     const quint64 counter = quint64(unixSeconds) / quint64(entry.period);
     QByteArray msg(8, 0);
     for (int i = 0; i < 8; ++i)
