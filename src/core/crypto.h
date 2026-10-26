@@ -21,6 +21,9 @@ QByteArray spkiDer(const P256Key &key);
 QByteArray signDer(const P256Key &key, const QByteArray &message);
 bool verifyDer(const QByteArray &spki, const QByteArray &message, const QByteArray &signature);
 
+// Literal TLS certificate public-key floors only; TLS still verifies trust and signatures.
+bool tlsCertificateKeyAllowed(const QByteArray &certificateDer);
+
 // RFC 8291 aes128gcm body (single record) addressed to `receiver` with auth secret `auth`.
 std::optional<QByteArray> webPushDecrypt(const P256Key &receiver, const QByteArray &auth,
                                          const QByteArray &body);

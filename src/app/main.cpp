@@ -9,6 +9,7 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QStandardPaths>
+#include <QSslConfiguration>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <cstdio>
@@ -122,6 +123,12 @@ int main(int argc, char *argv[])
         std::fprintf(stderr, "KyAuth is already running.\n");
         return 1;
     }
+    // Materialize the application's platform trust source before requests filter
+    // weak anchors and disable Qt's otherwise lazy root loading. Private CAs must
+    // be installed in the platform store. Controller never adds fallback anchors.
+    QSslConfiguration tls = QSslConfiguration::defaultConfiguration();
+    tls.setCaCertificates(QSslConfiguration::systemCaCertificates());
+    QSslConfiguration::setDefaultConfiguration(tls);
     // Smoke runs use a cheap KDF; the real one costs 128 MiB.
     Controller controller(dataDir, smoke ? ky::ScryptParams{1024, 8, 1} : ky::ScryptParams{});
 

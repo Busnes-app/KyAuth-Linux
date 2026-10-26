@@ -79,6 +79,26 @@ have no scanner, because QZXing's camera filter is Qt 5 only.
 - KyIdentity grades the device `none`, because there is no hardware attestation. Push MFA is
   unaffected, but this device cannot be used for MFA-grade device sign-on.
 - A copied code is cleared from the clipboard after 30 seconds.
+- Pairing, credential refresh and MFA responses require Qt's OpenSSL 3 TLS backend,
+  TLS 1.2 or later, and normal certificate/hostname verification. The application sets
+  OpenSSL security level 2 before sending, plus literal certificate-key checks:
+  RSA/DH keys below 2048 bits, EC keys below 224 bits and weak certificate signatures
+  are refused, including weak keys in the trusted chain. Redirects are never followed.
+  There is no weaker compatibility mode.
+  Replace an undersized server/CA key and reissue its certificates; install your private
+  CA through the platform's normal trust mechanism rather than bypassing verification.
+  A missing OpenSSL 3 backend disables network requests with a readable error; local
+  TOTP remains available.
+
+The supported TLS profile is fixed at `DEFAULT@SECLEVEL=2`. This explicitly replaces
+inherited TLS <=1.2 cipher selections/security levels, even if a system selected level
+3 or higher; it is not a promise to preserve a stricter administrator profile. The
+TLS policy covers KyAuth's own requests, not the separate OS push service/distributor.
+At startup the app loads the platform's CA certificates explicitly, then each request
+filters out weak anchors and disables lazy root loading. It uses HTTP/1.1 and full TLS
+handshakes so Qt 5.15 and Qt 6 can check the peer's chain before sending any HTTP data.
+Checked HTTP connections can be reused. Certificate keys must be recognized RSA/RSA-PSS,
+DSA/DH, EC, Ed25519 or Ed448 at the stated floors; other key types fail closed.
 
 ## Install
 

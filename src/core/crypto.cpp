@@ -25,6 +25,7 @@ using Params = std::unique_ptr<OSSL_PARAM, Free<OSSL_PARAM, OSSL_PARAM_free>>;
 using Bn = std::unique_ptr<BIGNUM, Free<BIGNUM, BN_clear_free>>;
 using Kdf = std::unique_ptr<EVP_KDF, Free<EVP_KDF, EVP_KDF_free>>;
 using KdfCtx = std::unique_ptr<EVP_KDF_CTX, Free<EVP_KDF_CTX, EVP_KDF_CTX_free>>;
+using Certificate = std::unique_ptr<X509, Free<X509, X509_free>>;
 
 const uchar *u(const QByteArray &b) { return reinterpret_cast<const uchar *>(b.constData()); }
 uchar *u(QByteArray &b) { return reinterpret_cast<uchar *>(b.data()); }
@@ -226,6 +227,24 @@ std::optional<QByteArray> webPushDecrypt(const P256Key &receiver, const QByteArr
     if (end < 0 || plain->at(end) != 2)
         return std::nullopt;
     return plain->left(end);
+}
+
+bool tlsCertificateKeyAllowed(const QByteArray &certificateDer)
+{
+    const uchar *position = u(certificateDer);
+    Certificate cert(d2i_X509(nullptr, &position, certificateDer.size()));
+    if (!cert || position != u(certificateDer) + certificateDer.size())
+        return false;
+    const EVP_PKEY *key = X509_get0_pubkey(cert.get());
+    if (!key)
+        return false;
+    const int bits = EVP_PKEY_get_bits(key);
+    if (EVP_PKEY_is_a(key, "RSA") || EVP_PKEY_is_a(key, "RSA-PSS")
+        || EVP_PKEY_is_a(key, "DSA") || EVP_PKEY_is_a(key, "DH") || EVP_PKEY_is_a(key, "DHX"))
+        return bits >= 2048;
+    if (EVP_PKEY_is_a(key, "EC"))
+        return bits >= 224;
+    return EVP_PKEY_is_a(key, "ED25519") || EVP_PKEY_is_a(key, "ED448");
 }
 
 QByteArray webPushEncrypt(const QByteArray &receiverPub, const QByteArray &auth,

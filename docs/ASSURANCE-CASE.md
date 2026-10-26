@@ -42,7 +42,19 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 
 1. **Phone → KyIdentity.** Every request is refused unless the URL is HTTPS. Redirects are
    not followed, requests time out after 10 s, and at most 64 KiB of a reply is read
-   (`Controller::request`, `src/app/controller.cpp`). A pairing's registration URL must have
+   (`Controller::request`, `src/app/controller.cpp`). Before dispatch, that shared path
+   requires QtNetwork's actual OpenSSL >=3 backend and sets TLS >=1.2, `VerifyPeer`
+   and `CipherString=DEFAULT@SECLEVEL=2`. OpenSSL enforces signature/exchange strength;
+   `tlsCertificateKeyAllowed` (`src/core/crypto.cpp`) enforces literal certificate
+   floors, including RSA-2047 that newer OpenSSL strength estimates round up.
+   Startup materializes the platform trust source (`src/app/main.cpp`); requests
+   filter weak anchors and disable on-demand roots, with no empty-list fallback.
+   HTTP/1.1 and full handshakes let the documented pre-data `encrypted` signal reject
+   weak peer-chain keys before HTTP bytes. The dedicated manager only pools checked
+   connections. Qt retains CA/name/time checks.
+   This fixed profile replaces inherited cipher/security-level settings, including
+   stricter levels. An unavailable backend refuses requests with a readable error
+   while local codes remain usable. A pairing's registration URL must have
    the same origin as its server (`parsePairing`, `src/core/protocol.cpp`).
 2. **Push transport → phone.** The body is RFC 8291 `aes128gcm`, decrypted with this
    pairing's keys (`webPushDecrypt`, `src/core/crypto.cpp`). A body that does not decrypt is
@@ -86,6 +98,7 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 | Plaintext or forged push | RFC 8291 decryption only; one record; the padding delimiter is checked | `webPushDecrypt` |
 | Push for another device, stale or replayed | Device ID, account, type and purpose must match; the expiry must be in the future and at most 10 minutes ahead | `parseChallenge`, `src/core/protocol.cpp` |
 | Answer redirection | HTTPS required on every request; registration URL same-origin; redirects not followed | `Controller::request`, `parsePairing` |
+| Weak TLS keys, certificates or exchange parameters | OpenSSL >=3 runtime, TLS >=1.2 and level 2 before dispatch; literal certificate floors (RSA/DH >=2048, EC >=224), filtered explicit anchors, pre-data peer-chain check, CA/name/time checks | `tlsCertificateKeyAllowed`, `Controller::request`, `src/app/main.cpp`; real TLS connections in `tests/test_tls.cpp` |
 | Oversized replies | Replies read up to 64 KiB | `Controller::request` |
 | Invalid curve points | Every peer public key is checked to be on P-256 before use | `loadP256` (`EVP_PKEY_public_check`) |
 | Injection into the UI | Server-supplied text is shown as `Text.PlainText` | `qml/Main.qml` |
@@ -115,6 +128,16 @@ affected by SHA-1's collision weakness.
   (RFC 6238), `test_protocol` (pairing, challenge parsing, KyAuth-Android golden strings),
   `test_vault`, `test_controller` (lock, save failure, push requeue, request binding) and a QML
   smoke test that fails on any QML warning.
+- **TLS regressions:** `test_tls` drives the real production request through local
+  TLS servers. Weak leaf/intermediate/root and directly trusted keys, SHA1-signed
+  certificates, DH-1024 and TLS 1.0/1.1 must fail without HTTP application bytes;
+  RSA-2048/P-256 TLS 1.2/1.3 and DH-2048 controls must succeed. Low-security fixture
+  controls establish that weak test servers are usable. Ordinary trust, expiry,
+  hostname, redirect, queued/reentrant refusal and repeated/reused-connection checks
+  remain separate assertions. DER boundary checks include RSA-PSS, Ed25519/Ed448,
+  malformed input and trailing bytes; they do not claim every such certificate type
+  was negotiated end-to-end by every Qt package.
+  This does not certify phone packaging, OS push transports or live KyIdentity.
 - **CI:** every pull request builds and tests on Qt 5 and Qt 6 and builds the arm64 click
   (`.github/workflows/ci.yml`). The release workflow builds and smoke-tests both Flatpak
   architectures on every pull request (`.github/workflows/release.yml`).

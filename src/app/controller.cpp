@@ -13,6 +13,9 @@
 #include <QNetworkReply>
 #include <QPointer>
 #include <QRegularExpression>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslSocket>
 #include <QSysInfo>
 #include <QThread>
 #include <QUuid>
@@ -54,6 +57,17 @@ PushCredential pushFrom(const QJsonValue &v)
 Controller::Controller(const QString &dataDir, const ScryptParams &kdf, QObject *parent)
     : QObject(parent), m_dir(dataDir), m_kdf(kdf)
 {
+    // Install before this dedicated manager can create any pooled connection.
+    connect(&m_net, &QNetworkAccessManager::encrypted, this, [](QNetworkReply *reply) {
+        // Qt guarantees no user data at this HTTP/1 signal. New connections get a
+        // full handshake; this manager only pools connections checked here.
+        const auto chain = reply->sslConfiguration().peerCertificateChain();
+        if (chain.isEmpty())
+            return reply->abort();
+        for (const QSslCertificate &cert : chain)
+            if (!tlsCertificateKeyAllowed(cert.toDer()))
+                return reply->abort();
+    });
     QDir().mkpath(m_dir);
     QFile::setPermissions(m_dir, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     loadState();
@@ -649,13 +663,51 @@ void Controller::request(const QByteArray &verb, const QString &url, const QJson
     req.setHeader(QNetworkRequest::ContentTypeHeader, QByteArrayLiteral("application/json"));
     req.setRawHeader("Accept", "application/json");
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+    // Qt 5.15's pre-data encrypted signal is only reliable for HTTP/1.
+    req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     req.setTransferTimeout(10000);
     if (req.url().scheme() != QLatin1String("https"))
         return done(0, {});
+    const auto unavailableTls = [this, &done] {
+        const QString error = tr("Secure networking is unavailable. Install Qt's OpenSSL 3 TLS backend.");
+        say(error);
+        done(0, QJsonDocument(QJsonObject{{QStringLiteral("error"), error}}).toJson(QJsonDocument::Compact));
+    };
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+    if (QSslSocket::activeBackend() != QLatin1String("openssl")
+        && !QSslSocket::setActiveBackend(QStringLiteral("openssl")))
+        return unavailableTls();
+#endif
+    // Qt 5.15/6.0 select their backend at build time. Check QtNetwork's actual
+    // runtime, not the independent OpenSSL::Crypto library used by the vault.
+    if (!QSslSocket::supportsSsl()
+        || !QSslSocket::sslLibraryVersionString().startsWith(QLatin1String("OpenSSL "))
+        || QSslSocket::sslLibraryVersionNumber() < 0x30000000L)
+        return unavailableTls();
+    QSslConfiguration tls = req.sslConfiguration();
+    tls.setProtocol(QSsl::TlsV1_2OrLater);
+    tls.setPeerVerifyMode(QSslSocket::VerifyPeer);
+    // Level 2 enforces exchange/signature strength, but newer OpenSSL estimates
+    // RSA-2047 as 112 bits. Enforce literal certificate sizes as well.
+    tls.setBackendConfigurationOption(QByteArrayLiteral("CipherString"),
+                                      QByteArrayLiteral("DEFAULT@SECLEVEL=2"));
+    QList<QSslCertificate> anchors;
+    for (const QSslCertificate &cert : tls.caCertificates())
+        if (tlsCertificateKeyAllowed(cert.toDer()))
+            anchors.append(cert);
+    // Also disables on-demand roots: no omitted weak anchor can enter the chain.
+    // An empty explicit list remains empty, rather than falling back to OS trust.
+    tls.setCaCertificates(anchors);
+    tls.setSessionTicket(QByteArray());
+    tls.setSslOption(QSsl::SslOptionDisableSessionSharing, true);
+    tls.setSslOption(QSsl::SslOptionDisableSessionPersistence, true);
+    tls.setSslOption(QSsl::SslOptionDisableSessionTickets, true);
+    req.setSslConfiguration(tls);
     QNetworkReply *reply = m_net.sendCustomRequest(req, verb, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [reply, done] {
         reply->deleteLater();
-        done(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(), reply->read(64 * 1024));
+        done(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),
+             reply->isReadable() ? reply->read(64 * 1024) : QByteArray());
     });
 }
 
