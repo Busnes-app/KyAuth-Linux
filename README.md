@@ -1,5 +1,8 @@
 # KyAuth for Linux phones
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15920/badge)](https://www.bestpractices.dev/projects/15920)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Busnes-app/KyAuth-Linux/badge)](https://scorecard.dev/viewer/?uri=github.com/Busnes-app/KyAuth-Linux)
+
 Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmarketOS) and
 **Ubuntu Touch**. A port of KyAuth-Android.
 
