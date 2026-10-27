@@ -40,6 +40,9 @@ modules:
     buildsystem: cmake-ninja
     # The ctest suite, QML smoke test included, runs inside the build.
     run-tests: true
+    build-options:
+      env:
+        CTEST_OUTPUT_ON_FAILURE: '1'
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
     sources:

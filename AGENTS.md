@@ -92,7 +92,8 @@ CredentialProvider) are not ported.
   `KYAUTH_TESTS=OFF` do not need that test dependency.
 - The Flatpak SDK lacks the D-Bus daemon. Its pinned `dbus-test-tools` module
   supplies the private test bus during `run-tests` and is removed during cleanup;
-  keep these tools/libraries out of the delivered application.
+  keep these tools/libraries out of the delivered application. Retain
+  `CTEST_OUTPUT_ON_FAILURE=1` so hosted package failures include test diagnostics.
 - Non-Debug builds default to `_FORTIFY_SOURCE=2`; preserve a toolchain-supplied
   level of at least 2 rather than redefining it (the Flatpak SDK supplies 3).
 - Code scanning (`.github/workflows/codeql.yml`): CodeQL on the C++ from a Qt 6 build, and on the workflows; push, pull request and weekly.
