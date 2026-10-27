@@ -19,11 +19,17 @@ add_compile_options(-Wall -Wextra -Werror=format-security -fstack-protector-stro
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     # The Flatpak SDK already supplies level 3. Retain it without redefining it.
     include(CheckCXXSourceCompiles)
+    # glibc fortifies only when optimising, and GCC on Debian/Ubuntu defines the level
+    # from the optimisation flags alone. Probe with the configuration's own flags, or a
+    # toolchain level goes undetected and the define below silently lowers it.
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" KYAUTH_CONFIG)
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_CXX_FLAGS_${KYAUTH_CONFIG}}")
     check_cxx_source_compiles("\
 #if !defined(_FORTIFY_SOURCE) || _FORTIFY_SOURCE < 2
 #error no toolchain fortification
 #endif
 int main() { return 0; }" KYAUTH_TOOLCHAIN_FORTIFY)
+    unset(CMAKE_REQUIRED_FLAGS)
     if(NOT KYAUTH_TOOLCHAIN_FORTIFY)
         add_compile_definitions(_FORTIFY_SOURCE=2)
     endif()

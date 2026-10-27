@@ -20,6 +20,11 @@ modules:
   - name: dbus-test-tools
     buildsystem: meson
     config-opts:
+      # Static: dbus-daemon needs libdbus-1 private symbols, versioned per release
+      # (LIBDBUS_PRIVATE_1.16.2). Meson drops its build-tree rpath on install, so a
+      # shared build resolves whichever libdbus the runtime ships and dies on any
+      # runtime whose dbus differs from the pin. Linking it in removes the coupling.
+      - -Ddefault_library=static
       - -Dasserts=true
       - -Dsystemd=disabled
       - -Duser_session=false

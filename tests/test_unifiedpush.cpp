@@ -195,6 +195,12 @@ int main(int argc, char **argv)
         std::fputs("Run this test through CTest's private dbus-run-session fixture.\n", stderr);
         return 2;
     }
+    // A dead fixture bus leaves interface() null; say so instead of dereferencing it.
+    if (auto bus = QDBusConnection::sessionBus(); !bus.isConnected() || !bus.interface()) {
+        std::fprintf(stderr, "private test bus unreachable: %s\n",
+                     qPrintable(bus.lastError().message()));
+        return 2;
+    }
     if (app.arguments().contains(QStringLiteral("--distributor"))) {
         TestDistributor mock;
         auto bus = QDBusConnection::sessionBus();
