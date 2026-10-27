@@ -84,6 +84,24 @@ CredentialProvider) are not ported.
   including chain keys, protocol versions, trust/name/expiry, redirects and repeats.
   Refusals must send no HTTP bytes; weak fixtures need successful low-security
   controls. It uses the OpenSSL CLI for throwaway certificates, not live secrets.
+- `unifiedpush` drives the real connector over an owned `dbus-run-session`, with
+  no service activation directories. Run it through CTest; the test refuses direct
+  execution. Its child distributor checks current-owner/token admission, binary
+  payload and endpoint bounds, owner replacement and registration/revocation.
+  Tests require `dbus-run-session` (`dbus-daemon`); production-only builds with
+  `KYAUTH_TESTS=OFF` do not need that test dependency.
+- The Flatpak SDK lacks the D-Bus daemon. Its pinned `dbus-test-tools` module
+  supplies the private test bus during `run-tests` and is removed during cleanup;
+  keep these tools/libraries out of the delivered application. Retain
+  `CTEST_OUTPUT_ON_FAILURE=1` so hosted package failures include test diagnostics.
+  Build it `-Ddefault_library=static`: `dbus-daemon` uses libdbus-1 private symbols
+  versioned per release, and a shared build resolves the runtime's libdbus instead of
+  the pin, so the test bus dies wherever the runtime's dbus differs.
+- Non-Debug builds default to `_FORTIFY_SOURCE=2`; preserve a toolchain-supplied
+  level of at least 2 rather than redefining it (the Flatpak SDK supplies 3). Probe
+  for it with the configuration's own optimisation flags: glibc fortifies only when
+  optimising, and GCC on Debian/Ubuntu sets the level from those flags alone, so an
+  unoptimised probe misses it and the fallback define lowers it.
 - Code scanning (`.github/workflows/codeql.yml`): CodeQL on the C++ from a Qt 6 build, and on the workflows; push, pull request and weekly.
 
 # Engineering principles

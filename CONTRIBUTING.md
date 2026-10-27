@@ -33,6 +33,22 @@ Run the checks that apply to the files you changed, and the repository's
 full required checks before hand-off. Record the exact commands and their
 results in the pull request.
 
+The `unifiedpush` CTest uses a private D-Bus daemon with no activation directories
+and an owned mock distributor process. Run `ctest --test-dir build -R unifiedpush
+--output-on-failure`; the executable refuses accidental direct execution. It must
+exercise the real connector and keep token/current-owner refusal and transport
+bounds asserted. Do not use a workstation or phone's session bus as a fixture.
+
+The Flatpak's build-only D-Bus 1.16.2 emits GCC 15.2 `-Wnull-dereference`
+diagnostics in `dbus-message.c` (cache/new-message paths) and `bus/services.c`
+(owner-list paths). These are false positives for the inspected pinned source:
+new-message allocation returns on null, the cache asserts a non-null entry, and
+owner removal/replacement requires and asserts the relevant list membership and
+successor. Build its assertions enabled (`-Dasserts=true`); retain the diagnostics
+and revisit this assessment when the source pin or compiler changes. These tools
+are removed before delivery. Application compiler warnings remain subject to the
+normal fix-or-document policy.
+
 ## AI attribution
 
 AI-assisted contributions are welcome; undisclosed ones are not. Disclose

@@ -125,7 +125,8 @@ Or install `kyauth-<arch>.flatpak` from the release; it updates from the same re
 ## Build
 
 You need Qt 5.15 or Qt 6 (Core, Network, Gui, Qml, Quick, QuickControls2, DBus, Test),
-OpenSSL 3, and CMake 3.16 or later. On Qt 5, QZXing and Qt Multimedia add QR scanning when
+OpenSSL 3, CMake 3.16 or later, and `dbus-run-session` (the `dbus-daemon` package)
+for tests. On Qt 5, QZXing and Qt Multimedia add QR scanning when
 found.
 
 ```sh

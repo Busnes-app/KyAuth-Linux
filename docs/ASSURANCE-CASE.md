@@ -106,7 +106,7 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 | Clipboard leak | A copied code is cleared after 30 s if it is still there | `src/app/controller.cpp` |
 | Weak randomness | Keys, salts and nonces from OpenSSL `RAND_bytes` and `EVP_EC_gen`; a failure aborts | `randomBytes`, `generateP256` |
 | Secrets in logs | The source has no logging calls (`qDebug`, `qInfo`, `qWarning`, `qCritical`) | `src/` |
-| Memory-safety slips | `-Wall -Wextra -Werror=format-security -fstack-protector-strong`, `_FORTIFY_SOURCE=2`; OpenSSL objects in `unique_ptr` | `CMakeLists.txt`, `src/core/crypto.cpp` |
+| Memory-safety slips | `-Wall -Wextra -Werror=format-security -fstack-protector-strong`, default `_FORTIFY_SOURCE=2` with toolchain levels of at least 2 retained; OpenSSL objects in `unique_ptr` | `CMakeLists.txt`, `src/core/crypto.cpp` |
 
 TOTP accepts HMAC-SHA-1 because RFC 6238 and most issuers require it. HMAC-SHA-1 is not
 affected by SHA-1's collision weakness.
@@ -138,6 +138,14 @@ affected by SHA-1's collision weakness.
   malformed input and trailing bytes; they do not claim every such certificate type
   was negotiated end-to-end by every Qt package.
   This does not certify phone packaging, OS push transports or live KyIdentity.
+- **D-Bus regressions:** `test_unifiedpush` runs the actual connector on a private
+  bus, with an owned distributor process and no installed-service activation.
+  It checks token/current-owner admission, owner loss/replacement, binary delivery,
+  endpoint/message bounds, registration refusal and unregistration. This does not
+  qualify a real phone distributor or Ubuntu Push delivery.
+  The Flatpak builds pinned test-only D-Bus tools because its SDK lacks a daemon;
+  its assertions remain enabled and cleanup removes that module before producing
+  the delivered app. The SDK's stronger fortification level is retained.
 - **CI:** every pull request builds and tests on Qt 5 and Qt 6 and builds the arm64 click
   (`.github/workflows/ci.yml`). The release workflow builds and smoke-tests both Flatpak
   architectures on every pull request (`.github/workflows/release.yml`).

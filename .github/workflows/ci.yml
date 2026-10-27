@@ -31,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build g++ libssl-dev ${{ matrix.packages }}
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build g++ libssl-dev dbus-daemon ${{ matrix.packages }}
       - name: Build
         run: |
           cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
