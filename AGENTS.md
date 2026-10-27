@@ -84,6 +84,17 @@ CredentialProvider) are not ported.
   including chain keys, protocol versions, trust/name/expiry, redirects and repeats.
   Refusals must send no HTTP bytes; weak fixtures need successful low-security
   controls. It uses the OpenSSL CLI for throwaway certificates, not live secrets.
+- `unifiedpush` drives the real connector over an owned `dbus-run-session`, with
+  no service activation directories. Run it through CTest; the test refuses direct
+  execution. Its child distributor checks current-owner/token admission, binary
+  payload and endpoint bounds, owner replacement and registration/revocation.
+  Tests require `dbus-run-session` (`dbus-daemon`); production-only builds with
+  `KYAUTH_TESTS=OFF` do not need that test dependency.
+- The Flatpak SDK lacks the D-Bus daemon. Its pinned `dbus-test-tools` module
+  supplies the private test bus during `run-tests` and is removed during cleanup;
+  keep these tools/libraries out of the delivered application.
+- Non-Debug builds default to `_FORTIFY_SOURCE=2`; preserve a toolchain-supplied
+  level of at least 2 rather than redefining it (the Flatpak SDK supplies 3).
 - Code scanning (`.github/workflows/codeql.yml`): CodeQL on the C++ from a Qt 6 build, and on the workflows; push, pull request and weekly.
 
 # Engineering principles

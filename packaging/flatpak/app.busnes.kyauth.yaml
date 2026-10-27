@@ -15,6 +15,27 @@ finish-args:
   # Controller::notifyDesktop posts a fixed "Sign-in request" notification.
   - --talk-name=org.freedesktop.Notifications
 modules:
+  # The SDK has QtDBus but no daemon; keep the real private-bus test in run-tests.
+  # Remove these build-only tools and libraries before producing the app.
+  - name: dbus-test-tools
+    buildsystem: meson
+    config-opts:
+      - -Dasserts=true
+      - -Dsystemd=disabled
+      - -Duser_session=false
+      - -Dselinux=disabled
+      - -Dapparmor=disabled
+      - -Dx11_autolaunch=disabled
+      - -Dmodular_tests=disabled
+      - -Dxml_docs=disabled
+      - -Ddoxygen_docs=disabled
+      - -Dducktype_docs=disabled
+      - -Dqt_help=disabled
+    cleanup: ['*']
+    sources:
+      - type: archive
+        url: https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz
+        sha256: 0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2
   - name: kyauth
     buildsystem: cmake-ninja
     # The ctest suite, QML smoke test included, runs inside the build.

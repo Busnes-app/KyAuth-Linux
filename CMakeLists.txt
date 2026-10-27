@@ -17,7 +17,16 @@ find_package(OpenSSL 3.0 REQUIRED)
 
 add_compile_options(-Wall -Wextra -Werror=format-security -fstack-protector-strong)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(_FORTIFY_SOURCE=2)
+    # The Flatpak SDK already supplies level 3. Retain it without redefining it.
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("\
+#if !defined(_FORTIFY_SOURCE) || _FORTIFY_SOURCE < 2
+#error no toolchain fortification
+#endif
+int main() { return 0; }" KYAUTH_TOOLCHAIN_FORTIFY)
+    if(NOT KYAUTH_TOOLCHAIN_FORTIFY)
+        add_compile_definitions(_FORTIFY_SOURCE=2)
+    endif()
 endif()
 add_link_options(-Wl,-z,relro,-z,now)
 add_compile_definitions(QT_NO_CAST_FROM_ASCII KYAUTH_VERSION="${PROJECT_VERSION}")
@@ -104,6 +113,15 @@ if(KYAUTH_TESTS)
     target_link_libraries(test_tls PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test)
     add_test(NAME tls COMMAND test_tls)
     set_tests_properties(tls PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 180)
+    find_program(DBUS_RUN_SESSION dbus-run-session)
+    if(NOT DBUS_RUN_SESSION)
+        message(FATAL_ERROR "Tests require dbus-run-session (dbus-daemon package)")
+    endif()
+    add_executable(test_unifiedpush tests/test_unifiedpush.cpp)
+    target_link_libraries(test_unifiedpush PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test)
+    add_test(NAME unifiedpush COMMAND "${CMAKE_COMMAND}" -E env KYAUTH_TEST_PRIVATE_BUS=1 "${DBUS_RUN_SESSION}"
+        "--config-file=${CMAKE_CURRENT_SOURCE_DIR}/tests/dbus-session.conf" -- $<TARGET_FILE:test_unifiedpush>)
+    set_tests_properties(unifiedpush PROPERTIES TIMEOUT 30)
     # Loads the real QML offscreen and fails on any QML warning.
     add_test(NAME qml_smoke COMMAND kyauth --smoke-test)
     # Software scene graph: headless runners have no OpenGL.
