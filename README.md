@@ -2,7 +2,6 @@
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15920/badge)](https://www.bestpractices.dev/projects/15920)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Busnes-app/KyAuth-Linux/badge)](https://scorecard.dev/viewer/?uri=github.com/Busnes-app/KyAuth-Linux)
-[![OctoCounts](https://api.octocounts.com/badge/Busnes-app/KyAuth-Linux/branch/master)](https://octocounts.com/github/Busnes-app/KyAuth-Linux/tree/master)
 
 Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmarketOS) and
 **Ubuntu Touch**. A port of KyAuth-Android.
@@ -154,3 +153,9 @@ later). Install the click from `build/aarch64-linux-gnu/app/` with `clickable in
 
 KyIdentity device sign-on for other apps, and the passkey provider. Both depend on Android
 system services.
+
+## License
+
+KyAuth for Linux phones is released under the [MIT License](LICENSE.txt).
+
+[![OctoCounts](https://api.octocounts.com/badge/Busnes-app/KyAuth-Linux/branch/master)](https://octocounts.com/github/Busnes-app/KyAuth-Linux/tree/master)
