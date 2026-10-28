@@ -153,3 +153,18 @@ later). Install the click from `build/aarch64-linux-gnu/app/` with `clickable in
 
 KyIdentity device sign-on for other apps, and the passkey provider. Both depend on Android
 system services.
+
+## License
+
+KyAuth for Linux phones is released under the [MIT License](LICENSE.txt).
+
+[![OctoCounts](https://api.octocounts.com/badge/Busnes-app/KyAuth-Linux/branch/master)](https://octocounts.com/github/Busnes-app/KyAuth-Linux/tree/master)
+
+## Documentation
+
+- [Distribution](docs/DISTRIBUTION.md) — what a release tag builds and where it is published.
+- [Verifying releases](docs/VERIFYING-RELEASES.md) — check the signed Flatpak and its source.
+- [Push contract](docs/push-contract.md) — the wire contract with KyIdentity for pairing and Push MFA.
+- [Assurance case](docs/ASSURANCE-CASE.md) — threat model, trust boundaries, and why the security requirements are met.
+- [Contributing](CONTRIBUTING.md) — how to propose a change and what it must pass.
+- [Security policy](SECURITY.md) — how to report a vulnerability privately.
