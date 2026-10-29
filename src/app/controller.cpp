@@ -344,9 +344,13 @@ void Controller::removeAccount(const QString &id)
         return;
     const QJsonObject before = m_vault->data;
     QJsonArray list = m_vault->data.value(QStringLiteral("totp")).toArray();
-    for (int i = 0; i < list.size(); ++i)
+    int i = 0;
+    while (i < list.size()) {
         if (list.at(i).toObject().value(QStringLiteral("id")).toString() == id)
-            list.removeAt(i--);
+            list.removeAt(i);
+        else
+            ++i;
+    }
     m_vault->data.insert(QStringLiteral("totp"), list);
     saveVault(before);
     emit tick();
