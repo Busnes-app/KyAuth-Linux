@@ -55,9 +55,10 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
       - if: matrix.build-mode == 'manual'
         name: Build
+        # Build outside the checkout so moc output falls outside the source root and is not analysed.
         run: |
-          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          cmake --build build
+          cmake -B "$RUNNER_TEMP/build" -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build "$RUNNER_TEMP/build"
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: /language:${{ matrix.language }}
