@@ -52,7 +52,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Clickable
-        run: pip install --user clickable-ut==8.9.0
+        run: pip install --user --require-hashes -r .github/requirements/clickable.txt
       - name: Build click
         # Clickable prefers podman, whose rootless mode cannot map the image's IDs on the runner.
         env:
