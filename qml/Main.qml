@@ -182,18 +182,24 @@ ApplicationWindow {
         }
     }
 
-    component Back: Pill {
-        text: qsTr("‹ Back")
-        quiet: true
-        Layout.fillWidth: false
-        Layout.preferredWidth: 104
-        Layout.leftMargin: -16
+    // An icon-only back button at the start of the title row; the chevron lines up with the content edge.
+    component Back: AbstractButton {
+        id: back
+        text: qsTr("Back")
+        Accessible.name: text
+        implicitWidth: 48
+        implicitHeight: 48
+        Layout.leftMargin: -18
+        background: Rectangle { radius: height / 2; color: back.down ? win.pressed : "transparent" }
+        contentItem: Item {
+            Icon { glyph: "back"; stroke: win.ink; anchors.centerIn: parent }
+        }
     }
 
     // A 24 px outline icon drawn on a 24-unit grid, in one stroke weight.
     component Icon: Canvas {
         id: icon
-        property string glyph       // vault | lock | settings | chevron
+        property string glyph       // vault | lock | settings | chevron | back
         property color stroke: win.muted
         implicitWidth: 24
         implicitHeight: 24
@@ -226,6 +232,8 @@ ApplicationWindow {
                 pen.moveTo(17, 16); pen.arc(15, 16, 2, 0, 2 * Math.PI, false)
             } else if (glyph === "chevron") {
                 pen.moveTo(9.5, 6); pen.lineTo(15.5, 12); pen.lineTo(9.5, 18)
+            } else if (glyph === "back") {    // chevron-left
+                pen.moveTo(14.5, 6); pen.lineTo(8.5, 12); pen.lineTo(14.5, 18)
             }
             pen.stroke()
         }
@@ -853,8 +861,12 @@ ApplicationWindow {
             Component {
                 id: appearancePage
                 Scrolling {
-                    Back { onClicked: win.page = "settings" }
-                    Title { text: qsTr("Appearance") }
+                    RowLayout {
+                        spacing: 2
+                        Layout.fillWidth: true
+                        Back { onClicked: win.page = "settings" }
+                        Title { text: qsTr("Appearance") }
+                    }
 
                     Card {
                         Title { text: qsTr("Light or dark"); font.pixelSize: 18 }
@@ -916,8 +928,12 @@ ApplicationWindow {
             Component {
                 id: aboutPage
                 Scrolling {
-                    Back { onClicked: win.page = "settings" }
-                    Title { text: qsTr("Licenses") }
+                    RowLayout {
+                        spacing: 2
+                        Layout.fillWidth: true
+                        Back { onClicked: win.page = "settings" }
+                        Title { text: qsTr("Licenses") }
+                    }
 
                     Card {
                         Label {
@@ -928,7 +944,8 @@ ApplicationWindow {
                         }
                         Body {
                             objectName: "licenseText"
-                            text: controller.license
+                            // The file wraps at 80 columns; join those breaks so each paragraph reflows.
+                            text: controller.license.replace(/([^\n])\n(?=[^\n])/g, "$1 ")
                             font.pixelSize: 13
                         }
                     }

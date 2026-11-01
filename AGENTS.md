@@ -67,7 +67,9 @@ CredentialProvider) are not ported.
   Linux does; every package installs `SpaceGrotesk-OFL.txt`. QML follows the suite shell rules:
   icon-plus-label tabs on the page surface with an accent-soft pill on the current one, ink (never
   accent) text on accent-soft, codes in ink with the accent only on the countdown bar, sentence-case
-  labels, nothing under the brand, destructive actions in danger.
+  labels, nothing under the brand, destructive actions in danger. Sub-pages go back through an
+  outline chevron-left icon button named "Back" in the title row; the licence reflows its 80-column
+  file breaks within paragraphs.
 - `docs/ASSURANCE-CASE.md` cites code paths for each security claim; a change that moves a trust
   boundary or a cited path updates it in the same PR. `docs/VERIFYING-RELEASES.md` describes the
   signed Flatpak repository and stays marked untested until a release is published and checked.
