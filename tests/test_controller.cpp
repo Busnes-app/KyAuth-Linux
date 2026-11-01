@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "theme.h"
 #include "totp.h"
 
 #include <QClipboard>
@@ -133,8 +134,10 @@ private slots:
         QVERIFY(persisted);
         QCOMPARE(persisted->data.value(QStringLiteral("totp")).toArray(), entries);
 
+        Theme theme(dir.filePath(QStringLiteral("theme.ini")));
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
         engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
         QVERIFY(!engine.rootObjects().isEmpty());
         auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
@@ -177,8 +180,10 @@ private slots:
         QTemporaryDir dir;
         FakeController c(dir.path(), fast);
         Controller &b = c; // private members are reachable as a Controller
+        Theme theme(dir.filePath(QStringLiteral("theme.ini")));
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
         engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
         QVERIFY(!engine.rootObjects().isEmpty());
         setUp(c);
@@ -204,8 +209,10 @@ private slots:
     {
         QTemporaryDir dir;
         FakeController c(dir.path(), fast);
+        Theme theme(dir.filePath(QStringLiteral("theme.ini")));
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
         engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
         QVERIFY(!engine.rootObjects().isEmpty());
         setUp(c);
@@ -231,8 +238,10 @@ private slots:
     {
         QTemporaryDir dir;
         FakeController c(dir.path(), fast);
+        Theme theme(dir.filePath(QStringLiteral("theme.ini")));
         QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
         engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
         QVERIFY(!engine.rootObjects().isEmpty());
         setUp(c);
@@ -243,6 +252,71 @@ private slots:
         QCOMPARE(root->property("page").toString(), QStringLiteral("settings"));
         c.lock();
         QTRY_COMPARE(root->property("page").toString(), QStringLiteral("vault"));
+    }
+
+    // The real QML: the appearance page sets the pair and the half, and the window repaints.
+    void appearancePageSetsTheTheme()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Theme theme(dir.filePath(QStringLiteral("theme.ini")));
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
+        engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        setUp(c);
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+        QVERIFY(window);
+        QCOMPARE(window->property("bg").value<QColor>(), QColor(QStringLiteral("#f8f6f0")));
+        std::function<QQuickItem *(QQuickItem *, const QString &)> findItem;
+        findItem = [&findItem](QQuickItem *item, const QString &name) -> QQuickItem * {
+            if (item->objectName() == name)
+                return item;
+            for (QQuickItem *child : item->childItems())
+                if (auto *found = findItem(child, name))
+                    return found;
+            return nullptr;
+        };
+        window->setProperty("page", QStringLiteral("settings"));
+        QQuickItem *connect = nullptr;
+        QTRY_VERIFY((connect = findItem(window->contentItem(), QStringLiteral("connectButton"))));
+        // A filled button's label is the half's on-accent colour (white on Busnes Light).
+        QCOMPARE(connect->property("contentItem").value<QQuickItem *>()->property("color").value<QColor>(),
+                 QColor(QStringLiteral("#ffffff")));
+        window->setProperty("page", QStringLiteral("appearance"));
+        QQuickItem *nord = nullptr;
+        QTRY_VERIFY((nord = findItem(window->contentItem(), QStringLiteral("pair_nord-pair"))));
+        QVERIFY(QMetaObject::invokeMethod(nord, "picked"));
+        QQuickItem *dark = findItem(window->contentItem(), QStringLiteral("mode_dark"));
+        QVERIFY(dark);
+        QVERIFY(QMetaObject::invokeMethod(dark, "picked"));
+        QCOMPARE(theme.pair(), QStringLiteral("nord-pair"));
+        QCOMPARE(theme.mode(), QStringLiteral("dark"));
+        QVERIFY(nord->property("checked").toBool());
+        QCOMPARE(window->property("bg").value<QColor>(), QColor(QStringLiteral("#2e3440")));
+        QCOMPARE(window->property("danger").value<QColor>(), QColor(QStringLiteral("#ecc4c8")));
+        // Visual only: nothing about the vault or state changed.
+        QCOMPARE(c.state(), QStringLiteral("unlocked"));
+    }
+
+    void pushStateAndNoticeKind()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        QCOMPARE(c.pushState(), QStringLiteral("waiting"));
+        b.setPushStatus(QStringLiteral("Ready"));
+        QCOMPARE(c.pushState(), QStringLiteral("ready"));
+        b.setPushStatus(QStringLiteral("Ubuntu Push error: x"));
+        QCOMPARE(c.pushState(), QStringLiteral("error"));
+        setUp(c);
+        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/A:b?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")));
+        QCOMPARE(c.noticeKind(), QStringLiteral("success"));
+        QVERIFY(!c.addAccount(QStringLiteral("otpauth://totp/A:b?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")));
+        QCOMPARE(c.noticeKind(), QStringLiteral("warning"));
+        QVERIFY(!c.addAccount(QStringLiteral("not a link")));
+        QCOMPARE(c.noticeKind(), QStringLiteral("danger"));
     }
 
     void duplicateAccountIsRefused()

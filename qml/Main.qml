@@ -10,17 +10,25 @@ ApplicationWindow {
     title: "KyAuth"
     color: bg
 
-    // Busnes Light.
-    readonly property color bg: "#f8f6f0"
-    readonly property color panel: "#ffffff"
-    readonly property color pressed: "#f1ede4"
-    readonly property color line: "#e4dfd3"
-    readonly property color ink: "#182326"
-    readonly property color muted: "#566461"
-    readonly property color accent: "#bf3f18"
-    readonly property color accentSoft: "#fbf0ec"
+    // The chosen half of a suite pair (ky-ui 0.11.0); see src/app/theme.cpp.
+    readonly property color bg: theme.colors.bg
+    readonly property color panel: theme.colors.panel
+    readonly property color pressed: theme.colors.pressed
+    readonly property color line: theme.colors.line
+    readonly property color ink: theme.colors.ink
+    readonly property color muted: theme.colors.muted
+    readonly property color accent: theme.colors.accent
+    readonly property color accentSoft: theme.colors.accentSoft
+    readonly property color accentInk: theme.colors.accentInk
+    // Status colours are never the accent, and always come with a word and a dot.
+    readonly property color danger: theme.colors.danger
+    readonly property color warning: theme.colors.warning
+    readonly property color success: theme.colors.success
+    readonly property color dangerSoft: theme.colors.dangerSoft
+    readonly property color warningSoft: theme.colors.warningSoft
+    readonly property color successSoft: theme.colors.successSoft
 
-    property string page: "vault"   // vault | settings | connect | scan | about
+    property string page: "vault"   // vault | settings | appearance | connect | scan | about
     property string scanFor: ""     // account | pairing
 
     font.pixelSize: 15
@@ -28,8 +36,10 @@ ApplicationWindow {
     palette.base: panel
     palette.text: ink
     palette.windowText: ink
+    palette.button: panel
+    palette.buttonText: ink
     palette.highlight: accent
-    palette.highlightedText: "#ffffff"
+    palette.highlightedText: accentInk
 
     Connections {
         target: controller
@@ -94,11 +104,13 @@ ApplicationWindow {
         Layout.fillWidth: true
     }
 
-    // Filled for the main action, outlined for the rest, quiet for Cancel.
+    // Filled for the main action, outlined for the rest, quiet for Cancel. Danger fills a destructive one.
     component Pill: Button {
         id: pill
         property bool filled: false
         property bool quiet: false
+        property bool danger: false
+        readonly property color textColor: filled ? (danger ? win.bg : win.accentInk) : (danger ? win.danger : win.accent)
         Layout.fillWidth: true
         implicitHeight: 50
         font.pixelSize: 16
@@ -106,14 +118,15 @@ ApplicationWindow {
         opacity: enabled ? 1 : 0.45
         background: Rectangle {
             radius: height / 2
-            color: pill.filled ? (pill.down ? Qt.darker(win.accent, 1.15) : win.accent)
+            readonly property color fill: pill.danger ? win.danger : win.accent
+            color: pill.filled ? (pill.down ? Qt.darker(fill, 1.15) : fill)
                                : (pill.down ? win.pressed : (pill.quiet ? "transparent" : win.panel))
             border.color: pill.filled || pill.quiet ? "transparent" : win.line
         }
         contentItem: Label {
             text: pill.text
             font: pill.font
-            color: pill.filled ? "#ffffff" : win.accent
+            color: pill.textColor
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
@@ -126,6 +139,7 @@ ApplicationWindow {
         implicitHeight: 50
         font.pixelSize: 16
         color: win.ink
+        placeholderTextColor: win.muted
         leftPadding: 16
         rightPadding: 16
         background: Rectangle {
@@ -175,6 +189,79 @@ ApplicationWindow {
         Layout.leftMargin: -16
     }
 
+    // A state: a dot and a word on the status tint, never colour alone.
+    component Status: Rectangle {
+        id: status
+        property string kind: "success"   // danger | warning | success
+        property alias word: statusWord.text
+        readonly property color tone: kind === "danger" ? win.danger : kind === "warning" ? win.warning : win.success
+        implicitWidth: statusWord.implicitWidth + 36
+        implicitHeight: statusWord.implicitHeight + 10
+        radius: height / 2
+        color: kind === "danger" ? win.dangerSoft : kind === "warning" ? win.warningSoft : win.successSoft
+        Rectangle {
+            x: 12
+            anchors.verticalCenter: parent.verticalCenter
+            width: 8
+            height: 8
+            radius: 4
+            color: status.tone
+        }
+        Label {
+            id: statusWord
+            x: 26
+            anchors.verticalCenter: parent.verticalCenter
+            font.pixelSize: 13
+            font.bold: true
+            color: status.tone
+            textFormat: Text.PlainText
+        }
+    }
+
+    // One choice in a settings list: a label and a radio mark.
+    component Choice: Rectangle {
+        id: choice
+        property alias label: choiceLabel.text
+        property alias detail: choiceDetail.text
+        property bool checked: false
+        default property alias lead: leadRow.data
+        signal picked()
+        Layout.fillWidth: true
+        implicitHeight: 56
+        radius: 14
+        color: choiceTap.pressed ? win.pressed : "transparent"
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            spacing: 12
+            RowLayout { id: leadRow; spacing: -8; visible: children.length > 0 }
+            ColumnLayout {
+                spacing: 0
+                Layout.fillWidth: true
+                Label { id: choiceLabel; font.pixelSize: 16; font.bold: choice.checked; color: win.ink; Layout.fillWidth: true }
+                Label { id: choiceDetail; font.pixelSize: 13; color: win.muted; visible: text !== ""; Layout.fillWidth: true }
+            }
+            Rectangle {
+                width: 22
+                height: 22
+                radius: 11
+                color: "transparent"
+                border.width: 2
+                border.color: choice.checked ? win.accent : win.muted
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 10
+                    height: 10
+                    radius: 5
+                    color: win.accent
+                    visible: choice.checked
+                }
+            }
+        }
+        MouseArea { id: choiceTap; anchors.fill: parent; onClicked: choice.picked() }
+    }
+
     // A full-height column that scrolls when it does not fit.
     component Scrolling: ScrollView {
         id: scroll
@@ -194,6 +281,9 @@ ApplicationWindow {
     // ---- Notices and confirmations ------------------------------------------------------------
 
     Rectangle {
+        id: notice
+        // Errors, warnings and confirmations wear their status; anything else is a plain dark note.
+        readonly property bool status: ["danger", "warning", "success"].indexOf(controller.noticeKind) >= 0
         visible: controller.notice !== ""
         z: 10
         anchors.left: parent.left
@@ -202,24 +292,39 @@ ApplicationWindow {
         anchors.margins: 16
         anchors.bottomMargin: 100
         radius: 16
-        color: win.ink
+        color: !status ? win.ink : controller.noticeKind === "danger" ? win.dangerSoft
+             : controller.noticeKind === "warning" ? win.warningSoft : win.successSoft
+        border.width: status ? 1 : 0
+        border.color: noticeStatus.tone
         implicitHeight: noticeRow.implicitHeight + 24
         RowLayout {
             id: noticeRow
             anchors.fill: parent
             anchors.margins: 12
             anchors.leftMargin: 18
-            Label {
-                text: controller.notice
-                textFormat: Text.PlainText
-                font.pixelSize: 15
-                color: "#f2efe8"
-                wrapMode: Text.Wrap
+            ColumnLayout {
+                spacing: 6
                 Layout.fillWidth: true
+                Status {
+                    id: noticeStatus
+                    visible: notice.status
+                    kind: controller.noticeKind
+                    color: win.panel
+                    word: controller.noticeKind === "danger" ? qsTr("Error")
+                        : controller.noticeKind === "warning" ? qsTr("Check") : qsTr("Done")
+                }
+                Label {
+                    text: controller.notice
+                    textFormat: Text.PlainText
+                    font.pixelSize: 15
+                    color: notice.status ? win.ink : win.bg
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
             }
             ToolButton {
                 text: "✕"
-                palette.buttonText: "#f2efe8"
+                palette.buttonText: notice.status ? win.ink : win.bg
                 onClicked: controller.clearNotice()
             }
         }
@@ -244,7 +349,7 @@ ApplicationWindow {
             width: parent.width
             spacing: 16
             Body { text: confirm.question; color: win.ink; font.pixelSize: 16 }
-            Pill { text: confirm.verb; filled: true; onClicked: { confirm.close(); confirm.action() } }
+            Pill { text: confirm.verb; filled: true; danger: true; onClicked: { confirm.close(); confirm.action() } }
             Pill { text: qsTr("Cancel"); quiet: true; onClicked: confirm.close() }
         }
         function ask(q, v, a) { question = q; verb = v; action = a; open() }
@@ -298,10 +403,10 @@ ApplicationWindow {
                 Component.onCompleted: forceActiveFocus()
                 onAccepted: unlockButton.clicked()
             }
-            Body {
+            Status {
                 visible: controller.retryIn > 0
-                text: qsTr("Try again in %1 s").arg(controller.retryIn)
-                color: win.accent
+                kind: "warning"
+                word: qsTr("Try again in %1 s").arg(controller.retryIn)
             }
             Pill {
                 id: unlockButton
@@ -323,6 +428,7 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.bottomMargin: nav.visible ? nav.height + 16 : 0
                 sourceComponent: win.page === "settings" ? settingsPage
+                               : win.page === "appearance" ? appearancePage
                                : win.page === "connect" ? connectPage
                                : win.page === "scan" ? scanPage
                                : win.page === "about" ? aboutPage : vaultPage
@@ -515,10 +621,27 @@ ApplicationWindow {
                             }
                             Label {
                                 objectName: "accountCode"
-                                text: acc.account.requiresReenrolment ? qsTr("Unavailable") : (acc.account.code || "")
-                                font.pixelSize: 40
-                                color: win.accent
+                                readonly property bool unavailable: acc.account.requiresReenrolment === true
+                                text: unavailable ? qsTr("Unavailable") : (acc.account.code || "")
+                                font.pixelSize: unavailable ? 13 : 40
+                                font.bold: unavailable
+                                color: unavailable ? win.warning : win.accent
                                 textFormat: Text.PlainText
+                                // Unavailable is a warning state: a dot and the word on its tint.
+                                leftPadding: unavailable ? 26 : 0
+                                rightPadding: unavailable ? 10 : 0
+                                topPadding: unavailable ? 5 : 0
+                                bottomPadding: unavailable ? 5 : 0
+                                background: Rectangle { visible: parent.unavailable; radius: height / 2; color: win.warningSoft }
+                                Rectangle {
+                                    visible: parent.unavailable
+                                    x: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 8
+                                    height: 8
+                                    radius: 4
+                                    color: win.warning
+                                }
                             }
                             Label {
                                 objectName: "accountCodeHint"
@@ -567,7 +690,12 @@ ApplicationWindow {
                     Title { text: qsTr("Settings"); Layout.topMargin: 8 }
 
                     Card {
-                        Title { text: qsTr("Push sign-in"); font.pixelSize: 18 }
+                        RowLayout {
+                            spacing: 10
+                            Title { text: qsTr("Push sign-in"); font.pixelSize: 18; Layout.fillWidth: false }
+                            Status { visible: controller.pairing.server !== undefined; kind: "success"; word: qsTr("Paired") }
+                            Item { Layout.fillWidth: true }
+                        }
                         Body {
                             text: controller.pairing.server !== undefined
                                   ? qsTr("Paired with %1 as %2.").arg(controller.pairing.server)
@@ -575,6 +703,7 @@ ApplicationWindow {
                                   : qsTr("Approve KyIdentity sign-ins on this phone with number matching.")
                         }
                         Pill {
+                            objectName: "connectButton"
                             visible: controller.pairing.server === undefined
                             text: qsTr("Connect your account")
                             filled: true
@@ -586,7 +715,26 @@ ApplicationWindow {
                             onClicked: confirm.ask(qsTr("Unpair this device? Sign-in requests will stop arriving here."),
                                                    qsTr("Unpair"), function () { controller.unpair() })
                         }
-                        Body { text: qsTr("Push: %1").arg(controller.pushStatus); font.pixelSize: 13 }
+                        RowLayout {
+                            spacing: 10
+                            Body { text: qsTr("Push"); font.pixelSize: 13; Layout.fillWidth: false }
+                            Status {
+                                objectName: "pushState"
+                                kind: controller.pushState === "ready" ? "success" : controller.pushState === "error" ? "danger" : "warning"
+                                word: controller.pushState === "ready" ? qsTr("Ready")
+                                    : controller.pushState === "error" ? qsTr("Error") : qsTr("Waiting")
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
+                        Body { visible: controller.pushState === "error"; text: controller.pushStatus; font.pixelSize: 13 }
+                    }
+
+                    Card {
+                        Title { text: qsTr("Appearance"); font.pixelSize: 18 }
+                        Body {
+                            text: (theme.mode === "system" ? qsTr("%1, following the system") : "%1").arg(theme.halfName)
+                        }
+                        Pill { objectName: "appearanceButton"; text: qsTr("Theme"); onClicked: win.page = "appearance" }
                     }
 
                     Card {
@@ -604,7 +752,7 @@ ApplicationWindow {
                                 text: "v" + Qt.application.version
                                 font.pixelSize: 12
                                 font.bold: true
-                                color: "#ffffff"
+                                color: win.accentInk
                                 leftPadding: 10
                                 rightPadding: 10
                                 topPadding: 3
@@ -615,6 +763,69 @@ ApplicationWindow {
                         }
                         Body { text: qsTr("Developed by Busnes.app\n© 2026 · Licensed under the MIT License") }
                         Pill { text: qsTr("Licenses"); onClicked: win.page = "about" }
+                    }
+                }
+            }
+
+            Component {
+                id: appearancePage
+                Scrolling {
+                    Back { onClicked: win.page = "settings" }
+                    Title { text: qsTr("Appearance") }
+
+                    Card {
+                        Title { text: qsTr("Light or dark"); font.pixelSize: 18 }
+                        ColumnLayout {
+                            spacing: 0
+                            Layout.fillWidth: true
+                            Repeater {
+                                model: [{ key: "system", label: qsTr("System"), detail: qsTr("Follow the phone's setting") },
+                                        { key: "light", label: qsTr("Light"), detail: "" },
+                                        { key: "dark", label: qsTr("Dark"), detail: "" }]
+                                Choice {
+                                    objectName: "mode_" + modelData.key
+                                    label: modelData.label
+                                    detail: modelData.detail
+                                    checked: theme.mode === modelData.key
+                                    onPicked: theme.mode = modelData.key
+                                }
+                            }
+                        }
+                    }
+
+                    Card {
+                        Title { text: qsTr("Theme"); font.pixelSize: 18 }
+                        Body { text: qsTr("Each theme has a light and a dark half."); font.pixelSize: 13 }
+                        ColumnLayout {
+                            spacing: 0
+                            Layout.fillWidth: true
+                            Repeater {
+                                model: theme.pairs
+                                Choice {
+                                    objectName: "pair_" + modelData.id
+                                    label: modelData.name
+                                    checked: theme.pair === modelData.id
+                                    onPicked: theme.pair = modelData.id
+                                    Repeater {
+                                        model: [[modelData.lightBg, modelData.lightAccent], [modelData.darkBg, modelData.darkAccent]]
+                                        Rectangle {
+                                            width: 30
+                                            height: 30
+                                            radius: 15
+                                            color: modelData[0]
+                                            border.color: win.line
+                                            Rectangle {
+                                                anchors.centerIn: parent
+                                                width: 12
+                                                height: 12
+                                                radius: 6
+                                                color: modelData[1]
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

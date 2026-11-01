@@ -54,6 +54,14 @@ CredentialProvider) are not ported.
   through `saveVault(before)`, which restores the in-memory data if the write fails.
 - The UnifiedPush connector accepts calls only with its token and only from the current owner
   of the chosen distributor's bus name.
+- Look (`src/app/theme.cpp`, ky-ui 0.11.0): six light/dark pairs (Busnes, Matter, Ocean, Forest,
+  Ky, Nord), Busnes by default, plus System (default), Light or Dark. The choice lives in
+  `theme.ini` in the config dir, never in `vault.json` or `state.json`, and survives an erase.
+  A stored half becomes its pair with that half forced; anything removed or unknown becomes
+  Busnes following the system. System dark comes from Qt >= 6.5, else the XDG portal's
+  `color-scheme` (async, colour only), or Lomiri's `theme.ini` on Ubuntu Touch. Danger,
+  warning and success are never the accent and always show a dot and a word; `tests/test_theme.cpp`
+  ports ky-ui's `check-status-colours.mjs` gate. Copy new values from ky-ui, do not invent them.
 - `docs/ASSURANCE-CASE.md` cites code paths for each security claim; a change that moves a trust
   boundary or a cited path updates it in the same PR. `docs/VERIFYING-RELEASES.md` describes the
   signed Flatpak repository and stays marked untested until a release is published and checked.
@@ -72,8 +80,10 @@ CredentialProvider) are not ported.
 
 - `ctest`: core vectors (RFC 8291, RFC 7914, RFC 6238, KyAuth-Android golden strings);
   `controller`, which drives `Controller` through a `request()` override (no network) for the
-  lock, save-failure, push-requeue and refresh rules, plus the real QML for request binding;
-  and `qml_smoke`, which drives the real QML through setup, add account and lock and fails on any
+  lock, save-failure, push-requeue and refresh rules, plus the real QML for request binding and
+  the appearance page; `theme`, the ky-ui status colour gate (180 checks) and saved-choice
+  migration; and `qml_smoke`, which drives the real QML through setup, add account, every
+  page, every theme half and lock and fails on any
   QML warning.
 - TOTP policy regressions cover the decoded 15/16-byte boundary, all supported HMACs,
   mixed legacy/strong encrypted-vault reload, refused import/copy, QML error text and

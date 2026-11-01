@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "theme.h"
 
 #include <QDir>
 #include <QGuiApplication>
@@ -48,24 +49,35 @@ void check(bool ok, const char *failure)
     }
 }
 
-// Drives the real QML through setup, adding an account, each page and locking. Fails on any warning.
-void runSmokeTest(Controller &c, QGuiApplication &app, QObject *root)
+// Drives the real QML through setup, adding an account, each page, every theme half and locking.
+// Fails on any warning.
+void runSmokeTest(Controller &c, Theme &theme, QGuiApplication &app, QObject *root)
 {
-    QObject::connect(&c, &Controller::stateChanged, &app, [&c, &app, root] {
+    QObject::connect(&c, &Controller::stateChanged, &app, [&c, &theme, &app, root] {
         if (c.state() != QLatin1String("unlocked"))
             return;
         check(c.addAccount(QStringLiteral("otpauth://totp/Smoke:test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")), "Adding an account failed.");
         const auto *window = qobject_cast<QQuickWindow *>(root);
         auto item = [window](const char *name) { return window ? findItem(window->contentItem(), name) : nullptr; };
         int delay = 0;
-        for (const char *page : {"settings", "about", "connect", "vault"})
+        for (const char *page : {"settings", "appearance", "about", "connect", "vault"})
             QTimer::singleShot(delay += 400, root, [root, page] { root->setProperty("page", QLatin1String(page)); });
-        QTimer::singleShot(1100, &app, [item] {
+        QTimer::singleShot(1500, &app, [item] {
             const QQuickItem *license = item("licenseText");
             check(license && license->property("text").toString().startsWith(QLatin1String("MIT License")),
                   "The license text did not load.");
         });
-        QTimer::singleShot(2000, &app, [&c, &app, item] {
+        // Every pair in both halves, on the appearance page.
+        QTimer::singleShot(1000, &app, [&theme] {
+            for (const QVariant &pair : theme.pairs())
+                for (const char *mode : {"dark", "light"}) {
+                    theme.setPair(pair.toMap().value(QStringLiteral("id")).toString());
+                    theme.setMode(QLatin1String(mode));
+                }
+            theme.setPair(QStringLiteral("busnes-pair"));
+            theme.setMode(QStringLiteral("system"));
+        });
+        QTimer::singleShot(2400, &app, [&c, &app, item] {
             check(c.accounts().size() == 1, "The account is missing.");
             // The code sits under the title; at 0 the card's layout was lost.
             const QQuickItem *code = item("accountCode");
@@ -135,14 +147,22 @@ int main(int argc, char *argv[])
 #ifdef KYAUTH_QR
     QZXing::registerQMLTypes();
 #endif
+    // The look is not secret and survives an erase, so it lives apart from the data directory.
+    Theme theme(smoke ? smokeDir.filePath(QStringLiteral("theme.ini"))
+                      : QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)
+                            + QStringLiteral("/theme.ini"));
+    if (!smoke)
+        theme.watchSystem();
+
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("controller"), &controller);
+    engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
     engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
     if (engine.rootObjects().isEmpty())
         return 1;
 
     if (smoke)
-        runSmokeTest(controller, app, engine.rootObjects().constFirst());
+        runSmokeTest(controller, theme, app, engine.rootObjects().constFirst());
     else
         controller.startPush();
     return app.exec();

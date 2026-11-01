@@ -325,7 +325,7 @@ bool Controller::addAccount(const QString &uri)
         const auto old = TotpEntry::fromJson(v.toObject());
         if (old && old->secret == e->secret && old->algorithm == e->algorithm && old->digits == e->digits
             && old->period == e->period) {
-            say(tr("%1 is already in your vault.").arg(old->title));
+            say(tr("%1 is already in your vault.").arg(old->title), "warning");
             return false;
         }
     }
@@ -333,7 +333,7 @@ bool Controller::addAccount(const QString &uri)
     m_vault->data.insert(QStringLiteral("totp"), list);
     if (!saveVault(before))
         return false;
-    say(tr("Added %1.").arg(e->title));
+    say(tr("Added %1.").arg(e->title), "success");
     emit tick();
     return true;
 }
@@ -364,11 +364,11 @@ void Controller::copyCode(const QString &id)
             continue;
         const QString copied = a.value(QStringLiteral("code")).toString().remove(QLatin1Char(' '));
         if (copied.isEmpty()) {
-            say(tr("This secret is too short. Set up two-step verification again with the account provider."));
+            say(tr("This secret is too short. Set up two-step verification again with the account provider."), "warning");
             return;
         }
         QGuiApplication::clipboard()->setText(copied);
-        say(tr("Code copied. It is cleared from the clipboard in 30 seconds."));
+        say(tr("Code copied. It is cleared from the clipboard in 30 seconds."), "success");
         QTimer::singleShot(30000, this, [this, copied] {
             if (QGuiApplication::clipboard()->text() == copied)
                 QGuiApplication::clipboard()->clear();
@@ -546,7 +546,7 @@ void Controller::pair(const QString &code)
         return say(error);
     auto push = currentPush();
     if (!push)
-        return say(tr("Push is not ready yet: %1").arg(m_pushStatus));
+        return say(tr("Push is not ready yet: %1").arg(m_pushStatus), "warning");
 
     const P256Key key = generateP256();
     const QString deviceName = tr("KyAuth on %1").arg(QSysInfo::machineHostName().left(60));
@@ -563,7 +563,7 @@ void Controller::pair(const QString &code)
         if (!ids)
             return say(tr("Pairing failed: %1").arg(error));
         if (!m_vault)
-            return say(tr("Locked before pairing finished. Pair again."));
+            return say(tr("Locked before pairing finished. Pair again."), "warning");
         const QJsonObject before = m_vault->data;
         m_vault->data.insert(QStringLiteral("pairing"),
                              QJsonObject{{QStringLiteral("serverUrl"), r.serverUrl},
@@ -575,7 +575,7 @@ void Controller::pair(const QString &code)
         if (!saveVault(before))
             return;
         clearChallenge();
-        say(tr("Paired. Sign-in requests will appear here."));
+        say(tr("Paired. Sign-in requests will appear here."), "success");
         emit pairingChanged();
         refreshPushIfNeeded(); // the endpoint may have changed while pairing
     });
@@ -590,7 +590,7 @@ void Controller::unpair()
     if (!saveVault(before))
         return;
     clearChallenge();
-    say(tr("Unpaired. Also remove this device in your KyIdentity account."));
+    say(tr("Unpaired. Also remove this device in your KyIdentity account."), "info");
     emit pairingChanged();
     emit tick();
 }
@@ -612,7 +612,7 @@ void Controller::approve(const QString &challengeId, const QString &digits)
 {
     static const QRegularExpression twoDigits(QStringLiteral("^\\d{2}$"));
     if (!twoDigits.match(digits).hasMatch())
-        return say(tr("Type the 2-digit number shown on the sign-in screen."));
+        return say(tr("Type the 2-digit number shown on the sign-in screen."), "warning");
     respond(challengeId, true, digits);
 }
 
@@ -623,7 +623,7 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
     if (!m_vault || !m_challenge || m_busy)
         return;
     if (m_challenge->challengeId != challengeId)
-        return say(tr("A newer request replaced that one. Check the number again."));
+        return say(tr("A newer request replaced that one. Check the number again."), "warning");
     const QJsonObject p = m_vault->data.value(QStringLiteral("pairing")).toObject();
     const QString server = p.value(QStringLiteral("serverUrl")).toString();
     const QString deviceId = p.value(QStringLiteral("deviceId")).toString();
@@ -652,9 +652,10 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
                 if (d == Decision::Error)
                     return say(tr("Not sent: %1").arg(error));
                 if (!approve)
-                    return say(tr("Denied."));
-                say(d == Decision::Approved ? tr("Approved.")
-                                            : tr("Not approved. The number did not match; sign in again."));
+                    return say(tr("Denied."), "info");
+                if (d == Decision::Approved)
+                    return say(tr("Approved."), "success");
+                say(tr("Not approved. The number did not match; sign in again."));
             });
 }
 
@@ -731,13 +732,21 @@ void Controller::setBusy(bool b)
     emit busyChanged();
 }
 
-void Controller::say(const QString &text)
+void Controller::say(const QString &text, const char *kind)
 {
     m_notice = text;
+    m_noticeKind = QLatin1String(kind);
     emit noticeChanged();
 }
 
-void Controller::clearNotice() { say({}); }
+void Controller::clearNotice() { say({}, "info"); }
+
+QString Controller::pushState() const
+{
+    if (m_pushStatus.isEmpty() || m_pushStatus == tr("Starting push…"))
+        return QStringLiteral("waiting");
+    return m_pushStatus == tr("Ready") ? QStringLiteral("ready") : QStringLiteral("error");
+}
 
 void Controller::setPushStatus(const QString &s)
 {
