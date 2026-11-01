@@ -20,10 +20,12 @@ class Controller : public QObject {
     Q_PROPERTY(QString state READ state NOTIFY stateChanged)          // setup | locked | unlocked
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
+    Q_PROPERTY(QString noticeKind READ noticeKind NOTIFY noticeChanged) // danger | warning | success | info
     Q_PROPERTY(int retryIn READ retryIn NOTIFY tick)
     Q_PROPERTY(QVariantList accounts READ accounts NOTIFY tick)
     Q_PROPERTY(QVariantMap pairing READ pairing NOTIFY pairingChanged)
     Q_PROPERTY(QString pushStatus READ pushStatus NOTIFY pushStatusChanged)
+    Q_PROPERTY(QString pushState READ pushState NOTIFY pushStatusChanged)   // ready | waiting | error
     Q_PROPERTY(QVariantMap challenge READ challenge NOTIFY tick)
     Q_PROPERTY(bool ubuntuTouch READ ubuntuTouch CONSTANT)
     Q_PROPERTY(bool qrScanner READ qrScanner CONSTANT)
@@ -37,10 +39,12 @@ public:
     QString state() const { return m_state; }
     bool busy() const { return m_busy; }
     QString notice() const { return m_notice; }
+    QString noticeKind() const { return m_noticeKind; }
     int retryIn() const;
     QVariantList accounts() const;
     QVariantMap pairing() const;
     QString pushStatus() const { return m_pushStatus; }
+    QString pushState() const;
     QVariantMap challenge() const;
     bool ubuntuTouch() const;
     bool qrScanner() const;
@@ -75,7 +79,8 @@ signals:
 private:
     void setState(const QString &s);
     void setBusy(bool b);
-    void say(const QString &text);
+    // `kind` only colours the notice: danger | warning | success | info.
+    void say(const QString &text, const char *kind = "danger");
     void setPushStatus(const QString &s);
     void loadState();
     bool saveState() const;
@@ -104,6 +109,7 @@ private:
     QString m_state;
     bool m_busy = false;
     QString m_notice;
+    QString m_noticeKind;
     QString m_pushStatus;
     std::optional<ky::Vault> m_vault;
     std::optional<ky::Challenge> m_challenge;

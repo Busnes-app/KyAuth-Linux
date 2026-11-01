@@ -48,6 +48,7 @@ target_link_libraries(kyauthcore PUBLIC Qt${QT_VERSION_MAJOR}::Core OpenSSL::Cry
 # App logic without the UI, shared by the binary and the controller tests.
 add_library(kyauthapp STATIC
     src/app/controller.cpp
+    src/app/theme.cpp
     src/app/unifiedpush.cpp)
 target_include_directories(kyauthapp PUBLIC src/app)
 target_link_libraries(kyauthapp PUBLIC kyauthcore
@@ -113,6 +114,11 @@ if(KYAUTH_TESTS)
     target_link_libraries(test_controller PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test
         Qt${QT_VERSION_MAJOR}::Qml Qt${QT_VERSION_MAJOR}::Quick Qt${QT_VERSION_MAJOR}::QuickControls2)
     add_test(NAME controller COMMAND test_controller)
+    # Suite pairs: the ky-ui status colour gate and saved-choice migration.
+    add_executable(test_theme tests/test_theme.cpp)
+    target_link_libraries(test_theme PRIVATE kyauthapp Qt${QT_VERSION_MAJOR}::Test)
+    add_test(NAME theme COMMAND test_theme)
+    set_tests_properties(theme PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     set_tests_properties(controller PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     # Real TLS connections through Controller::request, including pre-send refusals.
     add_executable(test_tls tests/test_tls.cpp)
