@@ -154,6 +154,7 @@ int main(int argc, char *argv[])
     if (!smoke)
         theme.watchSystem();
 
+    ky::theme::loadBundledFonts();
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("controller"), &controller);
     engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);

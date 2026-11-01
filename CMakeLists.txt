@@ -87,6 +87,7 @@ if(KYAUTH_UBUNTU_TOUCH)
                   packaging/click/push-helper.json packaging/click/push-helper.apparmor
                   packaging/click/kyauth.png # full-bleed: Lomiri draws the rounded shape
             DESTINATION .)
+    install(FILES fonts/Space_Grotesk/OFL.txt DESTINATION . RENAME SpaceGrotesk-OFL.txt)
     install(PROGRAMS packaging/click/push-helper DESTINATION .)
 else()
     include(GNUInstallDirs)
@@ -100,6 +101,9 @@ else()
     # AppStream (software centres, Flatpak) looks for 64, 128 or scalable icons.
     install(FILES packaging/nura/app.busnes.kyauth-128.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/128x128/apps
             RENAME app.busnes.kyauth.png)
+    # The bundled Space Grotesk (in qml.qrc) ships with its licence.
+    install(FILES fonts/Space_Grotesk/OFL.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/app.busnes.kyauth
+            RENAME SpaceGrotesk-OFL.txt)
 endif()
 
 if(KYAUTH_TESTS)

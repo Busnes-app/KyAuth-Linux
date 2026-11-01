@@ -31,6 +31,7 @@ ApplicationWindow {
     property string page: "vault"   // vault | settings | appearance | connect | scan | about
     property string scanFor: ""     // account | pairing
 
+    font.family: "Space Grotesk"   // bundled; see ky::theme::loadBundledFonts
     font.pixelSize: 15
     palette.window: bg
     palette.base: panel
@@ -187,6 +188,72 @@ ApplicationWindow {
         Layout.fillWidth: false
         Layout.preferredWidth: 104
         Layout.leftMargin: -16
+    }
+
+    // A 24 px outline icon drawn on a 24-unit grid, in one stroke weight.
+    component Icon: Canvas {
+        id: icon
+        property string glyph       // vault | lock | settings | chevron
+        property color stroke: win.muted
+        implicitWidth: 24
+        implicitHeight: 24
+        onStrokeChanged: requestPaint()
+        onPaint: {
+            var pen = getContext("2d")
+            pen.reset()
+            pen.scale(width / 24, height / 24)
+            pen.strokeStyle = stroke
+            pen.lineWidth = 1.75
+            pen.lineCap = "round"
+            pen.lineJoin = "round"
+            pen.beginPath()
+            if (glyph === "vault") {          // a shield with a check
+                pen.moveTo(12, 3); pen.lineTo(19, 5.8); pen.lineTo(19, 11)
+                pen.bezierCurveTo(19, 15.6, 16, 19.2, 12, 21)
+                pen.bezierCurveTo(8, 19.2, 5, 15.6, 5, 11)
+                pen.lineTo(5, 5.8); pen.closePath()
+                pen.moveTo(9, 12); pen.lineTo(11.2, 14.2); pen.lineTo(15.2, 10)
+            } else if (glyph === "lock") {    // a padlock
+                pen.roundedRect(5, 10.5, 14, 10, 2.5, 2.5)
+                pen.moveTo(8, 10.5); pen.lineTo(8, 7.5)
+                pen.arc(12, 7.5, 4, Math.PI, 0, false)
+                pen.lineTo(16, 10.5)
+                pen.moveTo(12, 14.5); pen.lineTo(12, 16.5)
+            } else if (glyph === "settings") { // two sliders
+                pen.moveTo(4, 8); pen.lineTo(7, 8); pen.moveTo(11, 8); pen.lineTo(20, 8)
+                pen.moveTo(11, 8); pen.arc(9, 8, 2, 0, 2 * Math.PI, false)
+                pen.moveTo(4, 16); pen.lineTo(13, 16); pen.moveTo(17, 16); pen.lineTo(20, 16)
+                pen.moveTo(17, 16); pen.arc(15, 16, 2, 0, 2 * Math.PI, false)
+            } else if (glyph === "chevron") {
+                pen.moveTo(9.5, 6); pen.lineTo(15.5, 12); pen.lineTo(9.5, 18)
+            }
+            pen.stroke()
+        }
+    }
+
+    // A settings value row: the setting on the left, its current value and a chevron on the right.
+    component ValueRow: AbstractButton {
+        id: valueRow
+        property string value
+        Layout.fillWidth: true
+        Layout.leftMargin: -8
+        Layout.rightMargin: -8
+        implicitHeight: 52
+        background: Rectangle { radius: 14; color: valueRow.down ? win.pressed : "transparent" }
+        contentItem: RowLayout {
+            spacing: 8
+            Label { text: valueRow.text; font.pixelSize: 16; color: win.ink; Layout.leftMargin: 8 }
+            Label {
+                text: valueRow.value
+                font.pixelSize: 15
+                color: win.muted
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignRight
+                Layout.fillWidth: true
+            }
+            Icon { glyph: "chevron"; implicitWidth: 20; implicitHeight: 20; Layout.rightMargin: 4 }
+        }
     }
 
     // A state: a dot and a word on the status tint, never colour alone.
@@ -426,7 +493,7 @@ ApplicationWindow {
         Item {
             Loader {
                 anchors.fill: parent
-                anchors.bottomMargin: nav.visible ? nav.height + 16 : 0
+                anchors.bottomMargin: nav.visible ? nav.height : 0
                 sourceComponent: win.page === "settings" ? settingsPage
                                : win.page === "appearance" ? appearancePage
                                : win.page === "connect" ? connectPage
@@ -440,20 +507,21 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                anchors.margins: 16
-                height: 64
-                radius: 32
-                color: win.panel
-                border.color: win.line
+                height: 76
+                color: win.bg
+                Rectangle { width: parent.width; height: 1; color: win.line }
                 RowLayout {
                     anchors.fill: parent
-                    anchors.margins: 6
+                    anchors.topMargin: 10
+                    anchors.bottomMargin: 10
                     spacing: 0
                     Repeater {
                         model: [{ key: "vault", label: qsTr("Vault") },
                                 { key: "lock", label: qsTr("Lock") },
                                 { key: "settings", label: qsTr("Settings") }]
                         ToolButton {
+                            id: tab
+                            readonly property bool current: win.page === modelData.key
                             objectName: "nav_" + modelData.key
                             Layout.fillWidth: true
                             Layout.preferredWidth: 1 // equal thirds, whatever the label length
@@ -464,17 +532,30 @@ ApplicationWindow {
                                 else
                                     win.page = modelData.key
                             }
-                            background: Rectangle {
-                                radius: height / 2
-                                color: win.page === modelData.key ? win.accentSoft : "transparent"
-                            }
-                            contentItem: Label {
-                                text: modelData.label
-                                font.pixelSize: 15
-                                font.bold: win.page === modelData.key
-                                color: win.page === modelData.key ? win.accent : win.muted
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
+                            background: null
+                            // The current tab's icon sits in an accent-soft pill; text on it stays ink.
+                            contentItem: ColumnLayout {
+                                spacing: 4
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    implicitWidth: 60
+                                    implicitHeight: 32
+                                    radius: 16
+                                    color: tab.current ? win.accentSoft : tab.down ? win.pressed : "transparent"
+                                    Icon {
+                                        anchors.centerIn: parent
+                                        glyph: modelData.key
+                                        stroke: tab.current ? win.ink : win.muted
+                                    }
+                                }
+                                Label {
+                                    text: modelData.label
+                                    font.pixelSize: 13
+                                    font.weight: tab.current ? Font.DemiBold : Font.Normal
+                                    color: tab.current ? win.ink : win.muted
+                                    horizontalAlignment: Text.AlignHCenter
+                                    Layout.fillWidth: true
+                                }
                             }
                         }
                     }
@@ -580,7 +661,7 @@ ApplicationWindow {
                         RoundButton {
                             objectName: "addButton"
                             text: "+"
-                            font.pixelSize: 26
+                            font.pixelSize: 34
                             implicitWidth: 48
                             implicitHeight: 48
                             palette.buttonText: win.accent
@@ -625,7 +706,7 @@ ApplicationWindow {
                                 text: unavailable ? qsTr("Unavailable") : (acc.account.code || "")
                                 font.pixelSize: unavailable ? 13 : 40
                                 font.bold: unavailable
-                                color: unavailable ? win.warning : win.accent
+                                color: unavailable ? win.warning : win.ink
                                 textFormat: Text.PlainText
                                 // Unavailable is a warning state: a dot and the word on its tint.
                                 leftPadding: unavailable ? 26 : 0
@@ -649,8 +730,6 @@ ApplicationWindow {
                                       ? qsTr("This secret is too short. Set up two-step verification again with the account provider.")
                                       : qsTr("Tap to copy · expires in %1 s").arg(acc.account.remaining || 0)
                                 font.pixelSize: 13
-                                font.capitalization: acc.account.requiresReenrolment ? Font.MixedCase : Font.AllUppercase
-                                font.letterSpacing: acc.account.requiresReenrolment ? 0 : 0.6
                                 color: win.muted
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
@@ -712,6 +791,7 @@ ApplicationWindow {
                         Pill {
                             visible: controller.pairing.server !== undefined
                             text: qsTr("Unpair")
+                            danger: true
                             onClicked: confirm.ask(qsTr("Unpair this device? Sign-in requests will stop arriving here."),
                                                    qsTr("Unpair"), function () { controller.unpair() })
                         }
@@ -731,10 +811,12 @@ ApplicationWindow {
 
                     Card {
                         Title { text: qsTr("Appearance"); font.pixelSize: 18 }
-                        Body {
-                            text: (theme.mode === "system" ? qsTr("%1, following the system") : "%1").arg(theme.halfName)
+                        ValueRow {
+                            objectName: "appearanceButton"
+                            text: qsTr("Theme")
+                            value: (theme.mode === "system" ? qsTr("%1, following the system") : "%1").arg(theme.halfName)
+                            onClicked: win.page = "appearance"
                         }
-                        Pill { objectName: "appearanceButton"; text: qsTr("Theme"); onClicked: win.page = "appearance" }
                     }
 
                     Card {
@@ -749,15 +831,16 @@ ApplicationWindow {
                             spacing: 10
                             Title { text: qsTr("About"); font.pixelSize: 18; Layout.fillWidth: false }
                             Label {
+                                visible: Qt.application.version !== ""
                                 text: "v" + Qt.application.version
                                 font.pixelSize: 12
-                                font.bold: true
-                                color: win.accentInk
+                                font.weight: Font.Medium
+                                color: win.muted
                                 leftPadding: 10
                                 rightPadding: 10
                                 topPadding: 3
                                 bottomPadding: 3
-                                background: Rectangle { radius: height / 2; color: win.accent }
+                                background: Rectangle { radius: height / 2; color: "transparent"; border.color: win.line }
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -839,11 +922,9 @@ ApplicationWindow {
                     Card {
                         Label {
                             text: qsTr("MIT License")
-                            font.pixelSize: 13
-                            font.bold: true
-                            font.capitalization: Font.AllUppercase
-                            font.letterSpacing: 1
-                            color: win.accent
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            color: win.ink
                         }
                         Body {
                             objectName: "licenseText"
@@ -855,11 +936,9 @@ ApplicationWindow {
                     Card {
                         Label {
                             text: qsTr("Third-party software")
-                            font.pixelSize: 13
-                            font.bold: true
-                            font.capitalization: Font.AllUppercase
-                            font.letterSpacing: 1
-                            color: win.accent
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            color: win.ink
                         }
                         Body {
                             text: qsTr("KyAuth uses these libraries from your system. It does not bundle them.")
@@ -894,16 +973,7 @@ ApplicationWindow {
                 id: connectPage
                 Scrolling {
                     Back { onClicked: win.page = "settings" }
-                    Brand { Layout.alignment: Qt.AlignHCenter; size: 36 }
-                    Label {
-                        text: qsTr("Secure access")
-                        font.pixelSize: 13
-                        font.capitalization: Font.AllUppercase
-                        font.letterSpacing: 4
-                        color: win.accent
-                        Layout.alignment: Qt.AlignHCenter
-                        Layout.bottomMargin: 16
-                    }
+                    Brand { Layout.alignment: Qt.AlignHCenter; size: 36; Layout.bottomMargin: 16 }
                     Title { text: qsTr("Connect your account"); font.pixelSize: 24 }
                     Body { text: qsTr("In KyIdentity, open Devices and create a pairing code. It is valid for 90 seconds.") }
                     Pill {

@@ -5,4 +5,10 @@
         <file>logo.png</file>
         <file alias="LICENSE.txt">../LICENSE.txt</file>
     </qresource>
+    <qresource prefix="/fonts">
+        <file alias="SpaceGrotesk-Regular.ttf">../fonts/Space_Grotesk/SpaceGrotesk-Regular.ttf</file>
+        <file alias="SpaceGrotesk-Medium.ttf">../fonts/Space_Grotesk/SpaceGrotesk-Medium.ttf</file>
+        <file alias="SpaceGrotesk-SemiBold.ttf">../fonts/Space_Grotesk/SpaceGrotesk-SemiBold.ttf</file>
+        <file alias="SpaceGrotesk-Bold.ttf">../fonts/Space_Grotesk/SpaceGrotesk-Bold.ttf</file>
+    </qresource>
 </RCC>
