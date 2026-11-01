@@ -5,6 +5,7 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusVariant>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QStandardPaths>
 #include <QStyleHints>
@@ -155,6 +156,15 @@ double contrast(const QColor &a, const QColor &b)
     };
     const double x = luminance(a), y = luminance(b);
     return (std::max(x, y) + 0.05) / (std::min(x, y) + 0.05);
+}
+
+void loadBundledFonts()
+{
+    for (const char *weight : {"Regular", "Medium", "SemiBold", "Bold"}) {
+        const QString file = QStringLiteral(":/fonts/SpaceGrotesk-%1.ttf").arg(QLatin1String(weight));
+        if (QFontDatabase::addApplicationFont(file) == -1)
+            qWarning("loadBundledFonts: failed to load bundled font: %s", qPrintable(file));
+    }
 }
 
 } // namespace ky::theme

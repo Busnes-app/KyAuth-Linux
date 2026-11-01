@@ -43,6 +43,11 @@ QColor mix(const QColor &a, int percent, const QColor &b);
 QColor soft(const QColor &status, const QColor &panel);
 double contrast(const QColor &a, const QColor &b);
 
+// The suite face, Space Grotesk (ky-ui `--ky-font-sans`), bundled in qml.qrc under the OFL as
+// KyPost for Linux bundles it. Call before loading QML. A file that fails to load is a packaging
+// defect and is logged; the platform sans then stands in.
+void loadBundledFonts();
+
 } // namespace ky::theme
 
 // The palette the QML reads. The choice is stored in its own settings file, apart from the

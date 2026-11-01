@@ -156,7 +156,8 @@ system services.
 
 ## License
 
-KyAuth for Linux phones is released under the [MIT License](LICENSE.txt).
+KyAuth for Linux phones is released under the [MIT License](LICENSE.txt). It bundles the
+Space Grotesk typeface under the [SIL Open Font License 1.1](fonts/Space_Grotesk/OFL.txt).
 
 [![OctoCounts](https://api.octocounts.com/badge/Busnes-app/KyAuth-Linux/branch/master)](https://octocounts.com/github/Busnes-app/KyAuth-Linux/tree/master)
 
