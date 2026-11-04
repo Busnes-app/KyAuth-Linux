@@ -103,7 +103,7 @@ private slots:
         legacy.id = QStringLiteral("legacy");
         legacy.title = QStringLiteral("Retained account");
         legacy.issuer = QStringLiteral("Original provider");
-        legacy.secret = QByteArray("0123456789");
+        legacy.secret = QByteArray("012345678"); // 72 bits: under the 80-bit floor
         legacy.algorithm = QStringLiteral("SHA1");
         const auto strong = parseOtpauth(QStringLiteral("otpauth://totp/Strong?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
         QVERIFY(strong);
@@ -128,7 +128,7 @@ private slots:
         QVERIFY(c.notice().contains(QStringLiteral("account provider")));
         c.copyCode(strong->id);
         QCOMPARE(QGuiApplication::clipboard()->text().size(), 6);
-        QVERIFY(!c.addAccount(QStringLiteral("otpauth://totp/Rejected?secret=JBSWY3DPEHPK3PXP")));
+        QVERIFY(!c.addAccount(QStringLiteral("otpauth://totp/Rejected?secret=JBSWY3DPEHPK3PX")));
         QCOMPARE(c.m_vault->data.value(QStringLiteral("totp")).toArray(), entries);
         const auto persisted = Vault::open(dir.filePath(QStringLiteral("vault.json")), pass);
         QVERIFY(persisted);
@@ -366,6 +366,186 @@ private slots:
         QVERIFY(!busy); // the passcode was never checked
         QCOMPARE(c.state(), QStringLiteral("locked"));
         QVERIFY(c.notice().contains(QStringLiteral("not checked")));
+        QCOMPARE(c.attemptsLeft(), kWipeAfterFailures); // ...so it was not counted either
+        QCOMPARE(c.retryIn(), 0);
+    }
+
+    // A vault that cannot be read is never erased, however often the right passcode is typed.
+    void unreadableVaultIsNeverErased()
+    {
+        if (geteuid() == 0)
+            QSKIP("root ignores file permissions");
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        c.lock();
+        const QString vault = dir.filePath(QStringLiteral("vault.json"));
+        QVERIFY(QFile::setPermissions(vault, QFileDevice::Permissions()));
+        for (int i = 0; i < kWipeAfterFailures + 1; ++i) {
+            QCOMPARE(c.retryIn(), 0);
+            c.unlock(pass);
+            QTRY_VERIFY(!c.busy());
+            QVERIFY(c.notice().contains(QStringLiteral("not checked")));
+        }
+        QVERIFY(QFile::setPermissions(vault, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+        QCOMPARE(c.state(), QStringLiteral("locked"));
+        QCOMPARE(c.attemptsLeft(), kWipeAfterFailures);
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+    }
+
+    void wrongPasscodeCountsDown()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        c.lock();
+        c.unlock(QStringLiteral("999999x"));
+        QTRY_VERIFY(!c.busy());
+        QCOMPARE(c.attemptsLeft(), kWipeAfterFailures - 1);
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+        QCOMPARE(c.attemptsLeft(), kWipeAfterFailures);
+    }
+
+    // After the clock moves back, the delay counts down from now instead of freezing.
+    void retryDelayCountsDownAfterClockGoesBack()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        setUp(c);
+        c.lock();
+        b.m_failures = 2;
+        b.m_lastFailureMs = QDateTime::currentMSecsSinceEpoch() + 86400000;
+        QCOMPARE(c.retryIn(), retryDelaySeconds(2));
+        QTRY_VERIFY_WITH_TIMEOUT(c.retryIn() < retryDelaySeconds(2), 4000);
+        QTRY_COMPARE_WITH_TIMEOUT(c.retryIn(), 0, 8000);
+    }
+
+    // Issuers choose the key length: 80 bits works with a warning, a typed setup key works too.
+    void shortSetupKeyAddsWithWarning()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        QVERIFY(!c.addKey(QStringLiteral(" "), QStringLiteral("JBSWY3DPEHPK3PXP")));
+        QVERIFY(!c.addKey(QStringLiteral("Too short"), QStringLiteral("JBSWY3DPEHPK3PX")));
+        QVERIFY(c.addKey(QStringLiteral("GitHub: alice"), QStringLiteral("jbsw y3dp ehpk 3pxp")));
+        QCOMPARE(c.accounts().size(), 1);
+        const QVariantMap a = c.accounts().first().toMap();
+        QCOMPARE(a.value(QStringLiteral("title")).toString(), QStringLiteral("GitHub (alice)"));
+        QVERIFY(a.value(QStringLiteral("shortKey")).toBool());
+        QVERIFY(!a.value(QStringLiteral("requiresReenrolment")).toBool());
+        QCOMPARE(a.value(QStringLiteral("code")).toString().size(), 7); // "123 456"
+        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/Strong?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")));
+        QVERIFY(!c.accounts().last().toMap().value(QStringLiteral("shortKey")).toBool());
+    }
+
+    // Answered just before a lock: the requeued push must not come back after unlocking.
+    void answeredBeforeLockDoesNotReturn()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        setUp(c);
+        pair(c);
+        b.handlePushBody(challengePush(c, "c1"));
+        c.deny(QStringLiteral("c1"));
+        QCOMPARE(c.requests.size(), 1);
+        c.lock(); // the user switched away before the reply
+        c.requests.at(0).done(200, "{\"success\":false}");
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+        QVERIFY(c.challenge().isEmpty());
+    }
+
+    // The server did not decide: the request stays so the user can answer again.
+    void unavailableServerKeepsRequest()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        setUp(c);
+        pair(c);
+        b.handlePushBody(challengePush(c, "c1"));
+        for (int status : {503, 429}) {
+            c.deny(QStringLiteral("c1"));
+            c.requests.last().done(status, {});
+            QCOMPARE(c.challenge().value(QStringLiteral("id")).toString(), QStringLiteral("c1"));
+        }
+        c.deny(QStringLiteral("c1"));
+        c.requests.last().done(409, "{\"error\":\"already answered\"}");
+        QVERIFY(c.challenge().isEmpty());
+    }
+
+    // A full queue keeps the newest push, which is the one the user is waiting for.
+    void fullQueueKeepsNewestPush()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        setUp(c);
+        pair(c);
+        QList<QByteArray> pushes;
+        for (int i = 1; i <= 9; ++i)
+            pushes.append(challengePush(c, QByteArray("c" + QByteArray::number(i)).constData()));
+        c.lock();
+        for (const QByteArray &p : pushes)
+            b.handlePushBody(p);
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+        QCOMPARE(c.challenge().value(QStringLiteral("id")).toString(), QStringLiteral("c9"));
+    }
+
+    // The real QML: a typed setup key asks for a name and adds the account.
+    void addSheetTakesASetupKey()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Theme theme(dir.filePath(QStringLiteral("theme.ini")));
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
+        engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        setUp(c);
+        QObject *root = engine.rootObjects().constFirst();
+        QObject *field = nullptr;
+        QTRY_VERIFY((field = root->findChild<QObject *>(QStringLiteral("otpUri"))));
+        QObject *name = root->findChild<QObject *>(QStringLiteral("keyName"));
+        QObject *add = root->findChild<QObject *>(QStringLiteral("addAccountButton"));
+        QVERIFY(name && add);
+        field->setProperty("text", QStringLiteral("otpauth://totp/A?secret=JBSWY3DPEHPK3PXP"));
+        QVERIFY(!name->property("needed").toBool()); // a link names itself
+        field->setProperty("text", QStringLiteral("JBSW Y3DP EHPK 3PXP"));
+        QVERIFY(name->property("needed").toBool());
+        QVERIFY(!add->property("enabled").toBool());
+        name->setProperty("text", QStringLiteral("Forge"));
+        QVERIFY(add->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(add, "clicked"));
+        QCOMPARE(c.accounts().size(), 1);
+        QCOMPARE(c.accounts().first().toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Forge"));
+    }
+
+    // The real QML: a confirmation never stays over the lock screen.
+    void confirmationClosesOnLock()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Theme theme(dir.filePath(QStringLiteral("theme.ini")));
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("controller"), &c);
+        engine.rootContext()->setContextProperty(QStringLiteral("theme"), &theme);
+        engine.load(QUrl(QStringLiteral("qrc:/Main.qml")));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        setUp(c);
+        QObject *confirm = engine.rootObjects().constFirst()->findChild<QObject *>(QStringLiteral("confirm"));
+        QVERIFY(confirm);
+        QVERIFY(QMetaObject::invokeMethod(confirm, "open"));
+        QTRY_VERIFY(confirm->property("visible").toBool());
+        c.lock();
+        QTRY_VERIFY(!confirm->property("visible").toBool());
     }
 
     void unpairKeepsPairingWhenSaveFails()

@@ -21,7 +21,7 @@ private slots:
     void refusesShortSecretsWithoutDiscardingLegacyRecords()
     {
         for (const char *algorithm : {"SHA1", "SHA256", "SHA512"}) {
-            for (int size : {1, 10, 15}) {
+            for (int size : {1, 5, 9}) {
                 const TotpEntry legacy = entry(QByteArray(size, 'x'), algorithm, 6);
                 const auto loaded = TotpEntry::fromJson(legacy.toJson());
                 QVERIFY(loaded);
@@ -31,15 +31,21 @@ private slots:
         }
     }
 
-    void requires128BitsAtImportAndGeneration()
+    void requires80BitsAtImportAndGeneration()
     {
-        for (const char *secret : {"AA", "JBSWY3DPEHPK3PXP", "GEZDGNBVGY3TQOJQGEZDGNBV"})
+        // 75 bits decode to 9 bytes: refused.
+        for (const char *secret : {"AA", "JBSWY3DPEHPK3PX"})
             QVERIFY(!parseOtpauth(QStringLiteral("otpauth://totp/Legacy?secret=") + QLatin1String(secret)));
-        const auto minimum = parseOtpauth(QStringLiteral("otpauth://totp/Minimum?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY"));
+        const auto minimum = parseOtpauth(QStringLiteral("otpauth://totp/Minimum?secret=JBSWY3DPEHPK3PXP"));
         QVERIFY(minimum);
-        QCOMPARE(minimum->secret.size(), 16);
+        QCOMPARE(minimum->secret.size(), 10);
+        // Independently computed HMAC-SHA1 of counter five with the 80-bit key.
+        QCOMPARE(totpCode(*minimum, 150), QStringLiteral("768897"));
+        const auto recommended = parseOtpauth(QStringLiteral("otpauth://totp/Strong?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY"));
+        QVERIFY(recommended);
+        QCOMPARE(recommended->secret.size(), 16);
         // Independently computed HMAC-SHA1 of counter five with the first 16 RFC-key bytes.
-        QCOMPARE(totpCode(*minimum, 150), QStringLiteral("715195"));
+        QCOMPARE(totpCode(*recommended, 150), QStringLiteral("715195"));
     }
 
     // RFC 6238 appendix B.

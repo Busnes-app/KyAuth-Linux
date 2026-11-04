@@ -18,6 +18,7 @@
 #include <QSslSocket>
 #include <QSysInfo>
 #include <QThread>
+#include <QUrlQuery>
 #include <QUuid>
 
 using namespace ky;
@@ -25,6 +26,8 @@ using namespace ky;
 namespace {
 
 qint64 nowMs() { return QDateTime::currentMSecsSinceEpoch(); }
+
+constexpr qint64 kMaxReplyBytes = 64 * 1024;
 
 QJsonObject keyJson(const P256Key &k)
 {
@@ -78,6 +81,10 @@ Controller::Controller(const QString &dataDir, const ScryptParams &kdf, QObject 
     connect(&m_ticker, &QTimer::timeout, this, [this] {
         if (m_challenge && m_challenge->expiresAtMs <= nowMs())
             clearChallenge();
+        if (m_lastFailureMs > nowMs()) { // the clock went back: count the delay from now
+            m_lastFailureMs = nowMs();
+            saveState();
+        }
         emit tick();
     });
     m_ticker.start();
@@ -162,20 +169,17 @@ void Controller::createPasscode(const QString &passcode, const QString &confirm)
     const ScryptParams kdf = m_kdf;
     const quint64 epoch = m_epoch;
     QThread *t = QThread::create([self, path, passcode, kdf, epoch] {
-        auto v = Vault::create(path, passcode, kdf);
+        const QJsonObject data{{QStringLiteral("deviceIdentifier"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
+                               {QStringLiteral("pushKey"), keyJson(generateP256())},
+                               {QStringLiteral("pushAuth"), QString::fromLatin1(randomBytes(16).toBase64())},
+                               {QStringLiteral("totp"), QJsonArray()}};
+        auto v = Vault::create(path, passcode, kdf, data);
         QMetaObject::invokeMethod(qGuiApp, [self, v, epoch]() mutable {
             if (!self)
                 return;
             self->setBusy(false);
             if (!v)
                 return self->say(tr("Could not create the vault."));
-            const P256Key pushKey = generateP256();
-            v->data = {{QStringLiteral("deviceIdentifier"), QUuid::createUuid().toString(QUuid::WithoutBraces)},
-                       {QStringLiteral("pushKey"), keyJson(pushKey)},
-                       {QStringLiteral("pushAuth"), QString::fromLatin1(randomBytes(16).toBase64())},
-                       {QStringLiteral("totp"), QJsonArray()}};
-            if (!v->save())
-                return self->say(tr("Could not save the vault."));
             if (self->m_epoch != epoch) { // left the foreground meanwhile
                 v->clearKey();
                 return self->setState(QStringLiteral("locked"));
@@ -192,20 +196,33 @@ void Controller::unlock(const QString &passcode)
     if (m_state != QLatin1String("locked") || m_busy || retryIn() > 0)
         return;
     // Count the attempt before checking it, so killing the app cannot skip the count.
+    const int failuresBefore = m_failures;
+    const qint64 lastFailureBefore = m_lastFailureMs;
     ++m_failures;
     m_lastFailureMs = nowMs();
-    if (!saveState())
+    if (!saveState()) {
+        m_failures = failuresBefore; // not checked, so not counted
+        m_lastFailureMs = lastFailureBefore;
         return say(tr("Could not record the attempt, so the passcode was not checked. Free some storage and try again."));
+    }
     setBusy(true);
     QPointer<Controller> self(this);
     const QString path = m_dir + QStringLiteral("/vault.json");
     const quint64 epoch = m_epoch;
-    QThread *t = QThread::create([self, path, passcode, epoch] {
-        auto v = Vault::open(path, passcode);
-        QMetaObject::invokeMethod(qGuiApp, [self, v, epoch]() mutable {
+    QThread *t = QThread::create([self, path, passcode, epoch, failuresBefore, lastFailureBefore] {
+        bool unreadable = false;
+        auto v = Vault::open(path, passcode, &unreadable);
+        QMetaObject::invokeMethod(qGuiApp, [self, v, epoch, unreadable, failuresBefore, lastFailureBefore]() mutable {
             if (!self)
                 return;
             self->setBusy(false);
+            if (unreadable) { // the passcode was never checked: undo the count, never erase
+                self->m_failures = failuresBefore;
+                self->m_lastFailureMs = lastFailureBefore;
+                self->saveState();
+                return self->say(tr("Could not read the vault, so the passcode was not checked. Close other apps "
+                                    "to free memory and try again. Nothing was erased."));
+            }
             if (v) {
                 self->m_failures = 0;
                 self->m_lastFailureMs = 0;
@@ -304,6 +321,8 @@ QVariantList Controller::accounts() const
                                {QStringLiteral("title"), e->title},
                                {QStringLiteral("code"), displayCode(totpCode(*e, now))},
                                {QStringLiteral("requiresReenrolment"), e->secret.size() < kMinTotpSecretBytes},
+                               {QStringLiteral("shortKey"), e->secret.size() >= kMinTotpSecretBytes
+                                                                && e->secret.size() < kRecommendedTotpSecretBytes},
                                {QStringLiteral("remaining"), int(e->period - now % e->period)},
                                {QStringLiteral("period"), e->period}});
     }
@@ -314,7 +333,7 @@ bool Controller::addAccount(const QString &uri)
 {
     auto e = parseOtpauth(uri);
     if (!m_vault || !e) {
-        say(tr("Use a valid otpauth://totp link with a secret of at least 128 bits (16 decoded bytes). "
+        say(tr("Use a valid otpauth://totp link or setup key with at least 80 bits (16 Base32 characters). "
                "If the secret is too short, set up two-step verification again with the account provider."));
         return false;
     }
@@ -336,6 +355,22 @@ bool Controller::addAccount(const QString &uri)
     say(tr("Added %1.").arg(e->title), "success");
     emit tick();
     return true;
+}
+
+bool Controller::addKey(const QString &name, const QString &key)
+{
+    if (name.trimmed().isEmpty()) {
+        say(tr("Name the account."));
+        return false;
+    }
+    QUrl uri;
+    uri.setScheme(QStringLiteral("otpauth"));
+    uri.setHost(QStringLiteral("totp"));
+    uri.setPath(QLatin1Char('/') + name.trimmed(), QUrl::DecodedMode);
+    QUrlQuery q;
+    q.addQueryItem(QStringLiteral("secret"), QString(key).remove(QRegularExpression(QStringLiteral("[\\s-]"))));
+    uri.setQuery(q);
+    return addAccount(uri.toString(QUrl::FullyEncoded));
 }
 
 void Controller::removeAccount(const QString &id)
@@ -445,8 +480,9 @@ std::optional<PushCredential> Controller::currentPush() const
 void Controller::handlePushBody(const QByteArray &body)
 {
     if (!m_vault) {
-        if (m_pending.size() < 8)
-            m_pending.append(body);
+        if (m_pending.size() >= 8) // keep the newest: it is the one the user is waiting for
+            m_pending.removeFirst();
+        m_pending.append(body);
         return;
     }
     const QJsonObject p = m_vault->data.value(QStringLiteral("pairing")).toObject();
@@ -628,6 +664,7 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
     const QString server = p.value(QStringLiteral("serverUrl")).toString();
     const QString deviceId = p.value(QStringLiteral("deviceId")).toString();
     const Challenge c = *m_challenge;
+    const QByteArray pushed = m_challengeBody;
     auto msg = pushResponseMessage(originOf(server), p.value(QStringLiteral("userId")).toString(), deviceId, c,
                                    approve, digits);
     const QByteArray sig = msg ? signDer(keyFrom(p.value(QStringLiteral("key"))), *msg) : QByteArray();
@@ -640,13 +677,17 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
                            {QStringLiteral("signature"), QString::fromLatin1(sig.toBase64())}};
     setBusy(true);
     request("POST", server + QStringLiteral("/api/mfa/push/respond"), body,
-            [this, c, approve](int status, const QByteArray &reply) {
+            [this, c, pushed, approve](int status, const QByteArray &reply) {
                 setBusy(false);
                 QString error;
                 const Decision d = parseDecision(status, reply, c.challengeId, &error);
-                // Answered (or refused) by the server: never offer it again. Keep it on network errors.
-                if (status != 0 && m_challenge && m_challenge->challengeId == c.challengeId)
-                    clearChallenge();
+                // Answered (or refused) by the server: never offer it again, even if a lock requeued it.
+                // Keep it when the server did not decide: no response, 429 or 5xx.
+                if (status > 0 && status < 500 && status != 429) {
+                    m_pending.removeAll(pushed);
+                    if (m_challenge && m_challenge->challengeId == c.challengeId)
+                        clearChallenge();
+                }
                 emit tick();
                 refreshPushIfNeeded();
                 if (d == Decision::Error)
@@ -709,10 +750,20 @@ void Controller::request(const QByteArray &verb, const QString &url, const QJson
     tls.setSslOption(QSsl::SslOptionDisableSessionTickets, true);
     req.setSslConfiguration(tls);
     QNetworkReply *reply = m_net.sendCustomRequest(req, verb, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    // Qt buffers a body until it finishes, and the transfer timeout only catches silence:
+    // bound both the size and the total time, so a bad server can neither fill memory nor hold `busy`.
+    reply->setReadBufferSize(kMaxReplyBytes + 1);
+    connect(reply, &QNetworkReply::downloadProgress, reply, [reply](qint64 received, qint64) {
+        if (received > kMaxReplyBytes)
+            reply->abort();
+    });
+    QTimer::singleShot(30000, reply, &QNetworkReply::abort);
     connect(reply, &QNetworkReply::finished, this, [reply, done] {
         reply->deleteLater();
-        done(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),
-             reply->isReadable() ? reply->read(64 * 1024) : QByteArray());
+        const QByteArray body = reply->isReadable() ? reply->read(kMaxReplyBytes + 1) : QByteArray();
+        if (reply->error() == QNetworkReply::OperationCanceledError || body.size() > kMaxReplyBytes)
+            return done(0, {});
+        done(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(), body);
     });
 }
 

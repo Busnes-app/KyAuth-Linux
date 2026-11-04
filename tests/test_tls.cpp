@@ -392,6 +392,27 @@ private slots:
         QCOMPARE(destination.connections, connectionsBeforePlaintext);
     }
 
+    // A reply over 64 KiB is cut off while it arrives and reported as no response.
+    void oversizedReplyIsRefused()
+    {
+        QSslConfiguration defaults = original;
+        defaults.setCaCertificates(QSslCertificate::fromPath(path(QStringLiteral("root.crt"))));
+        QSslConfiguration::setDefaultConfiguration(defaults);
+        TlsServer server;
+        server.tls = serverConfig(QStringLiteral("rsa2048"), QSsl::TlsV1_2);
+        server.response = QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: 1048576\r\nConnection: close\r\n\r\n")
+                        + QByteArray(1048576, 'x');
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        NetworkController controller(files.path(), ky::ScryptParams{1024, 8, 1});
+        int status = -1;
+        QByteArray body;
+        controller.request(QByteArrayLiteral("POST"), QStringLiteral("https://localhost:%1/big").arg(server.serverPort()), {},
+                           [&status, &body](int value, const QByteArray &reply) { status = value; body = reply; });
+        QTRY_VERIFY_WITH_TIMEOUT(status != -1, 12000);
+        QCOMPARE(status, 0);
+        QVERIFY(body.isEmpty());
+    }
+
     void queuedAndReentrantRefusals()
     {
         QSslConfiguration defaults = original;

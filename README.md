@@ -7,7 +7,8 @@ Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmark
 **Ubuntu Touch**. A port of KyAuth-Android.
 
 - **Codes:** TOTP (RFC 6238; SHA-1, SHA-256 and SHA-512; 6 to 8 digits). Scan the
-  account's QR code (Ubuntu Touch) or paste its `otpauth://totp/` link. An account already
+  account's QR code (Ubuntu Touch), paste its `otpauth://totp/` link, or type its setup key
+  and a name. An account already
   in the vault is refused.
 - **Push sign-in:** pair with KyIdentity once. Each sign-in then arrives on the phone, and you
   approve it by typing the two-digit number shown on the sign-in screen.
@@ -17,12 +18,13 @@ Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmark
 ## Independent use and prerequisites
 
 Local TOTP works without a Ky server. Set a strong passphrase, add an `otpauth://totp/`
-setup link (or scan on Ubuntu Touch), and verify a generated code at the issuing site.
+setup link or setup key (or scan on Ubuntu Touch), and verify a generated code at the issuing site.
 Keep its recovery codes separately; this app has no vault backup/export/sync workflow.
-New setup links require at least 128 bits of secret material (16 decoded bytes),
-as required by RFC 4226. Short secrets are refused for every supported HMAC algorithm.
-An older account with a short secret stays in your encrypted vault with its original
-name, issuer, ID and secret, but shows **Unavailable** instead of a code. Use the
+New accounts need at least 80 bits of secret material (16 Base32 characters, 10 decoded
+bytes). The issuer chooses the length; a key under the 128 bits RFC 4226 recommends works
+and shows **Short key** on its card. Shorter secrets are refused for every supported HMAC
+algorithm. An older account with a secret under 80 bits stays in your encrypted vault
+with its original name, issuer, ID and secret, but shows **Unavailable** instead of a code. Use the
 provider's recovery/sign-in process to set up two-step verification again, confirm
 the new code there, then explicitly remove the old entry when it is no longer needed.
 Do not pad or otherwise change the old secret yourself: it must match the provider.

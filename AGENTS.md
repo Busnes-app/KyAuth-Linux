@@ -38,16 +38,25 @@ CredentialProvider) are not ported.
   data dir (`~/.local/share/kyauth`, or `kyauth.busnes` on UT). `state.json` holds only the
   non-secret failure counter and push tokens. There is no hardware keystore: the passcode is
   the only protection against someone with the files, so the minimum is 6 characters.
-- TOTP imports and code generation require at least 16 decoded secret bytes for every
-  HMAC algorithm. Keep `TotpEntry::fromJson` structural: old short-secret records must
-  remain readable, visible and unchanged. Show provider re-enrolment guidance instead
-  of a code/copy countdown; refuse copying without altering the clipboard. Removal
-  remains an explicit user choice. No vault-format migration or secret padding.
+- TOTP imports and code generation require at least 10 decoded secret bytes (80 bits) for
+  every HMAC algorithm; the issuer chooses the length (owner decision, Nov 2026). Rows
+  under 16 bytes work and carry a "Short key" warning. Keep `TotpEntry::fromJson`
+  structural: older records under 80 bits must remain readable, visible and unchanged.
+  Show provider re-enrolment guidance for them instead of a code/copy countdown; refuse
+  copying without altering the clipboard. Removal remains an explicit user choice. No
+  vault-format migration or secret padding. The Add sheet takes an `otpauth://` link or a
+  typed Base32 setup key with a name (`Controller::addKey`).
 - Wrong passcodes: delays 0/5/30/300 s; the 5th consecutive failure erases local data. The
-  attempt is counted, and must be saved, before the passcode is checked.
+  attempt is counted, and must be saved, before the passcode is checked. Only a failed
+  AES-GCM check is a wrong passcode: an attempt that could not be saved, or a vault that
+  could not be read or derived (`Vault::open`'s `unreadable`), is uncounted and never
+  erases. The lock page always shows the tries left once one has failed. A failure time
+  in the future (the clock went back) is moved to now.
 - The app locks whenever it leaves the foreground. `lock()` bumps an epoch; a key derivation
   that finishes in an older epoch never opens the vault. An unanswered push request is
-  requeued, still encrypted, and re-checked on the next unlock.
+  requeued, still encrypted, and re-checked on the next unlock, unless the server answers
+  it meanwhile; 429, 5xx and no response leave it answerable. The locked queue holds 8
+  pushes and drops the oldest.
 - Approve/deny carry the challenge ID the screen showed; the controller refuses any other,
   and the QML clears a typed number when the shown request changes.
 - One process owns the data directory (`kyauth.lock`, `QLockFile`). Every vault change goes
@@ -93,7 +102,7 @@ CredentialProvider) are not ported.
   migration; and `qml_smoke`, which drives the real QML through setup, add account, every
   page, every theme half and lock and fails on any
   QML warning.
-- TOTP policy regressions cover the decoded 15/16-byte boundary, all supported HMACs,
+- TOTP policy regressions cover the decoded 9/10-byte boundary, the short-key warning, typed setup keys, all supported HMACs,
   mixed legacy/strong encrypted-vault reload, refused import/copy, QML error text and
   countdown visibility, and explicit legacy deletion. `KYAUTH_TEST_CAPTURE=<path>`
   optionally captures that test's synthetic account screen for local inspection.

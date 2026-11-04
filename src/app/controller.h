@@ -22,6 +22,7 @@ class Controller : public QObject {
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
     Q_PROPERTY(QString noticeKind READ noticeKind NOTIFY noticeChanged) // danger | warning | success | info
     Q_PROPERTY(int retryIn READ retryIn NOTIFY tick)
+    Q_PROPERTY(int attemptsLeft READ attemptsLeft NOTIFY tick)   // wrong passcodes left before the erase
     Q_PROPERTY(QVariantList accounts READ accounts NOTIFY tick)
     Q_PROPERTY(QVariantMap pairing READ pairing NOTIFY pairingChanged)
     Q_PROPERTY(QString pushStatus READ pushStatus NOTIFY pushStatusChanged)
@@ -41,6 +42,7 @@ public:
     QString notice() const { return m_notice; }
     QString noticeKind() const { return m_noticeKind; }
     int retryIn() const;
+    int attemptsLeft() const { return ky::kWipeAfterFailures - m_failures; }
     QVariantList accounts() const;
     QVariantMap pairing() const;
     QString pushStatus() const { return m_pushStatus; }
@@ -54,6 +56,7 @@ public:
     Q_INVOKABLE void unlock(const QString &passcode);
     Q_INVOKABLE void lock();
     Q_INVOKABLE bool addAccount(const QString &uri);
+    Q_INVOKABLE bool addKey(const QString &name, const QString &key); // a typed Base32 setup key
     Q_INVOKABLE void removeAccount(const QString &id);
     Q_INVOKABLE void copyCode(const QString &id);
     Q_INVOKABLE void pair(const QString &code);

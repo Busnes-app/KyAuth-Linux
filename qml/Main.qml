@@ -44,7 +44,8 @@ ApplicationWindow {
 
     Connections {
         target: controller
-        function onStateChanged() { win.page = "vault" }
+        function onStateChanged() { win.page = "vault"; confirm.close() }
+        function onNoticeChanged() { if (controller.notice !== "") noticeTimer.restart(); else noticeTimer.stop() }
         function onPairingChanged() { if (controller.pairing.server !== undefined && win.page === "connect") win.page = "settings" }
     }
 
@@ -404,14 +405,15 @@ ApplicationWindow {
             }
         }
         Timer {
+            id: noticeTimer // restarted for every new notice
             interval: 8000
-            running: controller.notice !== ""
             onTriggered: controller.clearNotice()
         }
     }
 
     Popup {
         id: confirm
+        objectName: "confirm"
         property string question
         property string verb
         property var action
@@ -482,6 +484,13 @@ ApplicationWindow {
                 visible: controller.retryIn > 0
                 kind: "warning"
                 word: qsTr("Try again in %1 s").arg(controller.retryIn)
+            }
+            Status {
+                objectName: "attemptsLeft"
+                visible: controller.attemptsLeft < 5
+                kind: "danger"
+                word: controller.attemptsLeft <= 1 ? qsTr("Last try before erase")
+                                                   : qsTr("%1 tries left before erase").arg(controller.attemptsLeft)
             }
             Pill {
                 id: unlockButton
@@ -577,14 +586,14 @@ ApplicationWindow {
                 width: Math.min(win.width - 40, 420)
                 padding: 24
                 background: Rectangle { radius: 24; color: win.panel }
-                onClosed: otpPaste.field.text = ""
+                onClosed: { otpPaste.field.text = ""; keyName.text = "" }
                 ColumnLayout {
                     width: parent.width
                     spacing: 14
                     Title { text: qsTr("Add to Vault") }
                     Body {
-                        text: controller.qrScanner ? qsTr("Scan the QR code from your service, or paste its otpauth:// link.")
-                                                   : qsTr("Paste the otpauth:// link from your service.")
+                        text: controller.qrScanner ? qsTr("Scan the QR code from your service, or paste its otpauth:// link or setup key.")
+                                                   : qsTr("Paste the otpauth:// link or setup key from your service.")
                     }
                     Pill {
                         visible: controller.qrScanner
@@ -596,15 +605,27 @@ ApplicationWindow {
                         id: otpPaste
                         fieldName: "otpUri"
                         pasteName: "otpPaste"
-                        placeholder: qsTr("otpauth:// link")
+                        placeholder: qsTr("otpauth:// link or setup key")
+                        onAccepted: addButton.clicked()
+                    }
+                    // A bare setup key carries no account name, so ask for one.
+                    Field {
+                        id: keyName
+                        objectName: "keyName"
+                        readonly property bool needed: otpPaste.field.text.trim() !== ""
+                                                       && !/^otpauth:/i.test(otpPaste.field.text.trim())
+                        visible: needed
+                        placeholderText: qsTr("Account name")
                         onAccepted: addButton.clicked()
                     }
                     Pill {
                         id: addButton
+                        objectName: "addAccountButton"
                         text: qsTr("Add account")
                         filled: !controller.qrScanner
-                        enabled: otpPaste.field.text.length > 0
-                        onClicked: if (controller.addAccount(otpPaste.field.text)) addSheet.close()
+                        enabled: otpPaste.field.text.length > 0 && (!keyName.needed || keyName.text.trim() !== "")
+                        onClicked: if (keyName.needed ? controller.addKey(keyName.text, otpPaste.field.text)
+                                                      : controller.addAccount(otpPaste.field.text)) addSheet.close()
                     }
                     Pill { text: qsTr("Cancel"); quiet: true; onClicked: addSheet.close() }
                 }
@@ -731,6 +752,12 @@ ApplicationWindow {
                                     radius: 4
                                     color: win.warning
                                 }
+                            }
+                            Status {
+                                objectName: "accountShortKey"
+                                visible: acc.account.shortKey === true
+                                kind: "warning"
+                                word: qsTr("Short key: under 128 bits")
                             }
                             Label {
                                 objectName: "accountCodeHint"

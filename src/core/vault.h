@@ -19,9 +19,12 @@ constexpr int kWipeAfterFailures = 5;
 // All secrets in one scrypt + AES-256-GCM sealed JSON file.
 class Vault {
 public:
+    // The first save already holds `data`, so a crash cannot leave a half-made vault.
     static std::optional<Vault> create(const QString &path, const QString &passcode,
-                                       const ScryptParams &params = {});
-    static std::optional<Vault> open(const QString &path, const QString &passcode);
+                                       const ScryptParams &params = {}, const QJsonObject &data = {});
+    // nullopt with `*unreadable` false means a wrong passcode. `*unreadable` true means the
+    // passcode was never checked: the file, its format or the key derivation failed.
+    static std::optional<Vault> open(const QString &path, const QString &passcode, bool *unreadable = nullptr);
 
     QJsonObject data;
     bool save() const;

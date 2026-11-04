@@ -50,9 +50,11 @@ int retryDelaySeconds(int failures)
     return failures < 0 ? 0 : delays[qMin(failures, 4)];
 }
 
-std::optional<Vault> Vault::create(const QString &path, const QString &passcode, const ScryptParams &params)
+std::optional<Vault> Vault::create(const QString &path, const QString &passcode, const ScryptParams &params,
+                                   const QJsonObject &data)
 {
     Vault v;
+    v.data = data;
     v.m_path = path;
     v.m_params = params;
     v.m_salt = randomBytes(16);
@@ -62,8 +64,11 @@ std::optional<Vault> Vault::create(const QString &path, const QString &passcode,
     return v;
 }
 
-std::optional<Vault> Vault::open(const QString &path, const QString &passcode)
+std::optional<Vault> Vault::open(const QString &path, const QString &passcode, bool *unreadable)
 {
+    bool ignored;
+    bool &failed = unreadable ? *unreadable : ignored;
+    failed = true; // until the passcode is actually checked
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
         return std::nullopt;
@@ -81,9 +86,14 @@ std::optional<Vault> Vault::open(const QString &path, const QString &passcode)
     if (v.m_params.n < 2 || v.m_params.n > (1u << 18) || v.m_params.r < 1 || v.m_params.r > 8
         || v.m_params.p != 1 || v.m_salt.size() != 16)
         return std::nullopt;
+    const QByteArray sealed = QByteArray::fromBase64(o.value(QStringLiteral("data")).toString().toLatin1());
+    if (sealed.size() < 12 + 16)
+        return std::nullopt;
     v.m_key = scrypt(passcode.toUtf8(), v.m_salt, v.m_params);
-    auto plain = aesGcmOpen(v.m_key, kAad,
-                            QByteArray::fromBase64(o.value(QStringLiteral("data")).toString().toLatin1()));
+    if (v.m_key.isEmpty()) // out of memory, or parameters OpenSSL refuses
+        return std::nullopt;
+    failed = false;
+    auto plain = aesGcmOpen(v.m_key, kAad, sealed);
     if (!plain)
         return std::nullopt;
     v.data = QJsonDocument::fromJson(*plain).object();

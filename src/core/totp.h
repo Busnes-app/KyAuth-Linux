@@ -7,7 +7,10 @@
 
 namespace ky {
 
-constexpr int kMinTotpSecretBytes = 16; // RFC 4226 section 4: at least 128 bits.
+// The issuer chooses the key length: 80 bits or more is accepted (owner decision, Nov 2026).
+// Keys under RFC 4226's recommended 128 bits carry a warning on the account row.
+constexpr int kMinTotpSecretBytes = 10;
+constexpr int kRecommendedTotpSecretBytes = 16;
 
 struct TotpEntry {
     QString id;
