@@ -161,7 +161,12 @@ ApplicationWindow {
         signal accepted()
         spacing: 8
         Layout.fillWidth: true
-        Field { id: input; onAccepted: parent.accepted() }
+        Field {
+            id: input
+            // Keys and links: no suggestions, auto-correct or learning by the keyboard.
+            inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase
+            onAccepted: parent.accepted()
+        }
         Pill { id: pasteButton; text: qsTr("Paste"); Layout.fillWidth: false; Layout.preferredWidth: 96; onClicked: input.paste() }
     }
 

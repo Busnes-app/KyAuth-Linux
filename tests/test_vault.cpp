@@ -65,7 +65,8 @@ private slots:
         QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
         f.close();
         QJsonObject kdf = o.value(QStringLiteral("kdf")).toObject();
-        for (auto bad : {std::make_pair("n", double(1u << 19)), std::make_pair("r", 9.0), std::make_pair("p", 2.0)}) {
+        for (auto bad : {std::make_pair("n", double(1u << 19)), std::make_pair("n", double((1u << 17) - 1)),
+                         std::make_pair("r", 9.0), std::make_pair("p", 2.0)}) {
             QJsonObject k = kdf;
             k.insert(QLatin1String(bad.first), bad.second);
             o.insert(QStringLiteral("kdf"), k);
@@ -95,6 +96,23 @@ private slots:
         QVERIFY(!Vault::readable(path));
         QVERIFY(writeFileAtomic(path, "{\"v\":1"));
         QVERIFY(!Vault::readable(path));
+    }
+
+    // Deriving says nothing about the passcode; only unseal() checks it.
+    void deriveThenUnseal()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("vault.json"));
+        QVERIFY(!Vault::derive(path, QStringLiteral("402917"))); // no file
+        QVERIFY(Vault::create(path, QStringLiteral("402917"), fast, {{QStringLiteral("k"), 1}}));
+        auto wrong = Vault::derive(path, QStringLiteral("402918"));
+        QVERIFY(wrong);
+        QVERIFY(!wrong->unseal());
+        auto right = Vault::derive(path, QStringLiteral("402917"));
+        QVERIFY(right);
+        QVERIFY(right->data.isEmpty());
+        QVERIFY(right->unseal());
+        QCOMPARE(right->data.value(QStringLiteral("k")).toInt(), 1);
     }
 
     // The first and only write of a new vault already holds its initial data.

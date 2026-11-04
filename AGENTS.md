@@ -46,14 +46,15 @@ CredentialProvider) are not ported.
   copying without altering the clipboard. Removal remains an explicit user choice. No
   vault-format migration or secret padding. The Add sheet takes an `otpauth://` link or a
   typed Base32 setup key with a name (`Controller::addKey`).
-- Wrong passcodes: delays 0/5/30/300 s; the 5th consecutive failure erases local data. The
-  attempt is counted, and must be saved, before the passcode is checked. An attempt that
-  could not be saved, or a vault file that `Vault::readable` refuses (checked before
-  counting: open, format, version, KDF header), is uncounted and never erases; the lock
-  page then offers a confirmed "Erase KyAuth and start over". A key derivation failure
-  (scrypt out of memory) still counts as a wrong passcode. The lock page shows the tries
-  left once one has failed. A failure time in the future (the clock went back) is moved
-  to now.
+- Wrong passcodes: delays 0/5/30/300 s; the 5th consecutive failure erases local data.
+  Unlock derives the key first (`Vault::derive`, worker thread), then counts and saves the
+  attempt, then checks the GCM tag (`Vault::unseal`). An attempt that could not be saved, a
+  failed key derivation (scrypt out of memory), or a vault file that `Vault::readable`
+  refuses (open, format, version, KDF header incl. power-of-two N) checked nothing, so it is
+  uncounted and never erases; an unreadable file makes the lock page offer a confirmed
+  "Erase KyAuth and start over". The lock page shows the tries left once one has failed.
+  A failure time in the future (the clock went back) is moved to now. Entering setup
+  (no vault) starts from zero failures.
 - The app locks whenever it leaves the foreground. `lock()` bumps an epoch; a key derivation
   that finishes in an older epoch never opens the vault. An unanswered push request is
   requeued, still encrypted, and re-checked on the next unlock. A challenge ID the server

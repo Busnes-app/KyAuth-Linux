@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QSaveFile>
 #include <QSet>
+#include <utility>
 
 namespace ky {
 namespace {
@@ -44,8 +45,8 @@ std::optional<Header> readHeader(const QString &path)
     h.params.r = quint32(kdf.value(QStringLiteral("r")).toInt());
     h.params.p = quint32(kdf.value(QStringLiteral("p")).toInt());
     h.salt = QByteArray::fromBase64(kdf.value(QStringLiteral("salt")).toString().toLatin1());
-    // Bound the work a tampered file can demand.
-    if (h.params.n < 2 || h.params.n > (1u << 18) || h.params.r < 1 || h.params.r > 8
+    // Bound the work a tampered file can demand. scrypt refuses an N that is not a power of two.
+    if (h.params.n < 2 || h.params.n > (1u << 18) || (h.params.n & (h.params.n - 1)) != 0 || h.params.r < 1 || h.params.r > 8
         || h.params.p != 1 || h.salt.size() != 16)
         return std::nullopt;
     h.sealed = QByteArray::fromBase64(o.value(QStringLiteral("data")).toString().toLatin1());
@@ -97,6 +98,14 @@ std::optional<Vault> Vault::create(const QString &path, const QString &passcode,
 
 std::optional<Vault> Vault::open(const QString &path, const QString &passcode)
 {
+    auto v = derive(path, passcode);
+    if (!v || !v->unseal())
+        return std::nullopt;
+    return v;
+}
+
+std::optional<Vault> Vault::derive(const QString &path, const QString &passcode)
+{
     const auto h = readHeader(path);
     if (!h)
         return std::nullopt;
@@ -104,13 +113,21 @@ std::optional<Vault> Vault::open(const QString &path, const QString &passcode)
     v.m_path = path;
     v.m_params = h->params;
     v.m_salt = h->salt;
+    v.m_sealed = h->sealed;
     v.m_key = scrypt(passcode.toUtf8(), v.m_salt, v.m_params);
-    auto plain = aesGcmOpen(v.m_key, kAad, h->sealed);
-    if (!plain)
+    if (v.m_key.isEmpty())
         return std::nullopt;
-    v.data = QJsonDocument::fromJson(*plain).object();
-    plain->fill(0);
     return v;
+}
+
+bool Vault::unseal()
+{
+    auto plain = aesGcmOpen(m_key, kAad, std::exchange(m_sealed, {}));
+    if (!plain)
+        return false;
+    data = QJsonDocument::fromJson(*plain).object();
+    plain->fill(0);
+    return true;
 }
 
 bool Vault::readable(const QString &path) { return readHeader(path).has_value(); }
