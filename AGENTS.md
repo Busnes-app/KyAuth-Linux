@@ -50,7 +50,7 @@ CredentialProvider) are not ported.
   Unlock derives the key first (`Vault::derive`, worker thread), then counts and saves the
   attempt, then checks the GCM tag (`Vault::unseal`). An attempt that could not be saved, a
   failed key derivation (scrypt out of memory), or a vault file that `Vault::readable`
-  refuses (open, format, version, KDF header incl. power-of-two N) checked nothing, so it is
+  refuses (open, format, version, KDF header: power-of-two N below 2^(16r)) checked nothing, so it is
   uncounted and never erases; an unreadable file makes the lock page offer a confirmed
   "Erase KyAuth and start over". The lock page shows the tries left once one has failed.
   A failure time in the future (the clock went back) is moved to now. Creating a
