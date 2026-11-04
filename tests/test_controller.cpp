@@ -13,6 +13,7 @@
 #include <QQuickWindow>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <sys/resource.h>
 #include <unistd.h>
 
 using namespace ky;
@@ -227,6 +228,10 @@ private slots:
             QTRY_VERIFY((field = root->findChild<QObject *>(QLatin1String(t.field))));
             QObject *paste = root->findChild<QObject *>(QLatin1String(t.paste));
             QVERIFY(paste);
+            // Keys and links must not be auto-corrected or learnt by the keyboard.
+            const int hints = field->property("inputMethodHints").toInt();
+            QVERIFY(hints & Qt::ImhSensitiveData);
+            QVERIFY(hints & Qt::ImhNoPredictiveText);
             QGuiApplication::clipboard()->setText(QLatin1String(t.field));
             QVERIFY(QMetaObject::invokeMethod(paste, "clicked"));
             QCOMPARE(field->property("text").toString(), QLatin1String(t.field));
@@ -361,10 +366,9 @@ private slots:
         c.lock();
         QVERIFY(readOnly(dir.path(), true));
         c.unlock(pass);
-        const bool busy = c.busy();
+        QTRY_VERIFY(!c.busy());
         QVERIFY(readOnly(dir.path(), false));
-        QVERIFY(!busy); // the passcode was never checked
-        QCOMPARE(c.state(), QStringLiteral("locked"));
+        QCOMPARE(c.state(), QStringLiteral("locked")); // the passcode was never checked
         QVERIFY(c.notice().contains(QStringLiteral("not checked")));
         QCOMPARE(c.attemptsLeft(), kWipeAfterFailures); // ...so it was not counted either
         QCOMPARE(c.retryIn(), 0);
@@ -415,6 +419,74 @@ private slots:
         QCOMPARE(c.state(), QStringLiteral("setup"));
         QVERIFY(!QFile::exists(vault));
         QVERIFY(!c.vaultUnreadable());
+    }
+
+    // A key derivation that fails (scrypt out of memory) checked nothing, so it is never counted.
+    void failedDerivationIsNotCounted()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), ScryptParams{1u << 17, 8, 1}); // needs 128 MiB
+        setUp(c);
+        c.lock();
+        rlimit before{};
+        QVERIFY(getrlimit(RLIMIT_AS, &before) == 0);
+        for (int i = 0; i < kWipeAfterFailures + 1; ++i) {
+            QFile status(QStringLiteral("/proc/self/status"));
+            QVERIFY(status.open(QIODevice::ReadOnly));
+            const QByteArray s = status.readAll();
+            const int at = s.indexOf("VmSize:");
+            QVERIFY(at >= 0);
+            const rlim_t vm = s.mid(at + 7, s.indexOf('\n', at) - at - 7).replace("kB", "").trimmed().toULongLong() * 1024;
+            rlimit tight = before;
+            tight.rlim_cur = vm + (96u << 20); // room for a thread, not for scrypt
+            QVERIFY(setrlimit(RLIMIT_AS, &tight) == 0);
+            c.unlock(pass);
+            QTRY_VERIFY(!c.busy());
+            QVERIFY(setrlimit(RLIMIT_AS, &before) == 0);
+            QCOMPARE(c.state(), QStringLiteral("locked"));
+            QVERIFY(c.notice().contains(QStringLiteral("not counted")));
+            QCOMPARE(c.attemptsLeft(), kWipeAfterFailures);
+            QCOMPARE(c.retryIn(), 0);
+        }
+        QVERIFY(QFile::exists(dir.filePath(QStringLiteral("vault.json"))));
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+    }
+
+    // Counts left over from an erased or deleted vault do not carry into a new one.
+    void newVaultStartsWithEveryAttempt()
+    {
+        QTemporaryDir dir;
+        QVERIFY(writeFileAtomic(dir.filePath(QStringLiteral("state.json")),
+                                QJsonDocument(QJsonObject{{QStringLiteral("failures"), 4},
+                                                          {QStringLiteral("lastFailureMs"),
+                                                           double(QDateTime::currentMSecsSinceEpoch())}}).toJson()));
+        {
+            FakeController first(dir.path(), fast);
+            QCOMPARE(first.state(), QStringLiteral("setup"));
+            setUp(first);
+        } // restarted before any unlock: the reset must already be on disk
+        FakeController c(dir.path(), fast);
+        QCOMPARE(c.state(), QStringLiteral("locked"));
+        QCOMPARE(c.attemptsLeft(), kWipeAfterFailures);
+        QCOMPARE(c.retryIn(), 0);
+        c.unlock(QStringLiteral("999999x"));
+        QTRY_VERIFY(!c.busy());
+        QCOMPARE(c.state(), QStringLiteral("locked"));
+        QCOMPARE(c.attemptsLeft(), kWipeAfterFailures - 1);
+        QVERIFY(QFile::exists(dir.filePath(QStringLiteral("vault.json"))));
+    }
+
+    // A notice can name an account, so locking clears it.
+    void lockClearsNotice()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/Bank:alice?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")));
+        QVERIFY(c.notice().contains(QStringLiteral("alice")));
+        c.lock();
+        QVERIFY(c.notice().isEmpty());
     }
 
     void wrongPasscodeCountsDown()

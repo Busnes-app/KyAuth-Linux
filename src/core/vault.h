@@ -22,7 +22,13 @@ public:
     // The first save already holds `data`, so a crash cannot leave a half-made vault.
     static std::optional<Vault> create(const QString &path, const QString &passcode,
                                        const ScryptParams &params = {}, const QJsonObject &data = {});
+    // derive() then unseal(), for callers that do not count attempts.
     static std::optional<Vault> open(const QString &path, const QString &passcode);
+    // Slow: reads the file and derives the key. nullopt when the file or the key derivation
+    // fails (scrypt out of memory), which says nothing about the passcode.
+    static std::optional<Vault> derive(const QString &path, const QString &passcode);
+    // Fast: checks the passcode against the GCM tag and decrypts. False: wrong passcode.
+    bool unseal();
     // The file, its format and its KDF header are usable: checked before an attempt is counted.
     static bool readable(const QString &path);
 
@@ -34,6 +40,7 @@ private:
     QString m_path;
     QByteArray m_salt;
     QByteArray m_key;
+    QByteArray m_sealed; // set by derive() until unseal()
     ScryptParams m_params;
 };
 

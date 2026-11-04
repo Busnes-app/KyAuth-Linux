@@ -74,7 +74,7 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 - **Least privilege.** The Flatpak asks for no filesystem access. `src/core` depends only on
   QtCore and OpenSSL and holds every protocol and crypto rule. `src/app` is glue.
 - **Fail-safe defaults.** A failure count that cannot be saved means the passcode is not
-  checked. A vault file with out-of-range scrypt parameters is refused rather than run. A
+  checked. A key derivation that fails checked nothing, so it is not counted. A vault file with out-of-range scrypt parameters is refused rather than run. A
   push that does not decrypt, names another device or account, or expires more than ten
   minutes ahead is dropped.
 - **Complete mediation.** Approve and deny carry the challenge ID the screen showed, and the
@@ -92,8 +92,8 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 | Weakness | Counter | Where |
 |---|---|---|
 | Secrets at rest | AES-256-GCM under a scrypt key (N=2^17, r=8, p=1), random 16-byte salt, fixed associated data, file mode 0600, atomic write | `src/core/vault.cpp`, `src/core/crypto.cpp` (`scrypt`, `aesGcmSeal`) |
-| Tampered vault demanding huge work | scrypt parameters bounded on open (N ≤ 2^18, r ≤ 8, p = 1, 16-byte salt) | `Vault::open` |
-| Passcode guessing on the phone | Delays of 5, 30 and 300 s before the 3rd to 5th tries; the 5th failure erases data; the attempt is saved before it is checked. An unsaved attempt, or a vault file that cannot be read or has an unknown format, is uncounted and never erases | `retryDelaySeconds`, `kWipeAfterFailures` (`src/core/vault.h`), `Vault::readable`, `Controller::unlock`; `tests/test_vault.cpp`, `tests/test_controller.cpp` |
+| Tampered vault demanding huge work | scrypt parameters bounded on open (N ≤ 2^18 and a power of two, N < 2^(16r), r ≤ 8, p = 1, 16-byte salt) | `readHeader` (`src/core/vault.cpp`), used by `Vault::readable` and `Vault::derive` |
+| Passcode guessing on the phone | Delays of 5, 30 and 300 s before the 3rd to 5th tries; the 5th failure erases data; the attempt is saved before it is checked. An unsaved attempt, a failed key derivation, or a vault file that cannot be read or has an unknown format, is uncounted and never erases | `retryDelaySeconds`, `kWipeAfterFailures` (`src/core/vault.h`), `Vault::readable`, `Vault::derive`, `Vault::unseal`, `Controller::unlock`; `tests/test_vault.cpp`, `tests/test_controller.cpp` |
 | Weak passcodes | At least 6 characters; common and sequential PINs refused | `passcodeProblem` |
 | Undersized TOTP keys | Import and generation require 10 decoded bytes (80 bits) for SHA1/SHA256/SHA512; keys under 16 bytes show a "Short key" warning. Storage validation retains older records under 80 bits, while the account screen shows provider re-enrolment guidance and copying is refused without changing the clipboard | `src/core/totp.cpp` (`parseOtpauth`, `totpCode`, `TotpEntry::fromJson`), `Controller::accounts` / `copyCode`, `qml/Main.qml`; `tests/test_totp.cpp`, `tests/test_controller.cpp` |
 | Plaintext or forged push | RFC 8291 decryption only; one record; the padding delimiter is checked | `webPushDecrypt` |

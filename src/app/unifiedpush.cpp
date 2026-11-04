@@ -36,8 +36,11 @@ void UnifiedPush::start(const QString &token)
 {
     m_token = token;
     QDBusConnection bus = QDBusConnection::sessionBus();
-    if (!bus.isConnected() || !bus.registerService(QLatin1String(kService))
-        || !bus.registerObject(QStringLiteral("/org/unifiedpush/Connector"), this, QDBusConnection::ExportAllSlots)) {
+    // Export before claiming the name: a call queued by D-Bus activation arrives as soon as the
+    // name is ours, and is answered UnknownObject if nothing is exported yet.
+    if (!bus.isConnected()
+        || !bus.registerObject(QStringLiteral("/org/unifiedpush/Connector"), this, QDBusConnection::ExportAllSlots)
+        || !bus.registerService(QLatin1String(kService))) {
         emit failed(tr("Could not listen on D-Bus. Is KyAuth already running?"));
         return;
     }

@@ -165,6 +165,12 @@ void Controller::createPasscode(const QString &passcode, const QString &confirm)
         return say(problem);
     if (passcode != confirm)
         return say(tr("The passcodes do not match."));
+    // A new vault starts with every attempt, saved before the vault exists, so a count left by
+    // an erased or deleted vault can never carry over.
+    m_failures = 0;
+    m_lastFailureMs = 0;
+    if (!saveState())
+        return say(tr("Could not save KyAuth's state. Free some storage and try again."));
     setBusy(true);
     QPointer<Controller> self(this);
     const QString path = m_dir + QStringLiteral("/vault.json");
@@ -206,39 +212,48 @@ void Controller::unlock(const QString &passcode)
     }
     m_vaultUnreadable = false;
     emit tick();
-    // Count the attempt before checking it, so killing the app cannot skip the count.
-    const int failuresBefore = m_failures;
-    const qint64 lastFailureBefore = m_lastFailureMs;
-    ++m_failures;
-    m_lastFailureMs = nowMs();
-    if (!saveState()) {
-        m_failures = failuresBefore; // not checked, so not counted
-        m_lastFailureMs = lastFailureBefore;
-        return say(tr("Could not record the attempt, so the passcode was not checked. Free some storage and try again."));
-    }
     setBusy(true);
     QPointer<Controller> self(this);
     const quint64 epoch = m_epoch;
     QThread *t = QThread::create([self, path, passcode, epoch] {
-        auto v = Vault::open(path, passcode);
+        auto v = Vault::derive(path, passcode);
         QMetaObject::invokeMethod(qGuiApp, [self, v, epoch]() mutable {
             if (!self)
                 return;
             self->setBusy(false);
-            if (v) {
+            // Until the tag is checked below, nothing is known about the passcode, so neither a
+            // failed derivation nor leaving the foreground counts as an attempt.
+            if (!v)
+                return self->say(tr("Could not check the passcode, so it was not counted. "
+                                    "Close other apps to free memory and try again."));
+            if (self->m_epoch != epoch) { // left the foreground meanwhile: unlock again
+                v->clearKey();
+                return;
+            }
+            // Count the attempt before checking it, so killing the app cannot skip the count.
+            const int failuresBefore = self->m_failures;
+            const qint64 lastFailureBefore = self->m_lastFailureMs;
+            ++self->m_failures;
+            self->m_lastFailureMs = nowMs();
+            if (!self->saveState()) {
+                self->m_failures = failuresBefore; // not checked, so not counted
+                self->m_lastFailureMs = lastFailureBefore;
+                v->clearKey();
+                emit self->tick();
+                return self->say(tr("Could not record the attempt, so the passcode was not checked. Free some storage and try again."));
+            }
+            if (v->unseal()) {
                 self->m_failures = 0;
                 self->m_lastFailureMs = 0;
                 self->saveState();
-                if (self->m_epoch != epoch) { // left the foreground meanwhile: unlock again
-                    v->clearKey();
-                    return;
-                }
                 return self->onUnlocked(*v);
             }
+            v->clearKey();
             if (self->m_failures >= kWipeAfterFailures) {
                 self->wipe();
                 return self->say(tr("Too many wrong passcodes. KyAuth erased its data."));
             }
+            emit self->tick();
             self->say(tr("Wrong passcode. %n attempt(s) left before KyAuth erases its data.", nullptr,
                          kWipeAfterFailures - self->m_failures));
         });
@@ -268,8 +283,10 @@ void Controller::lock()
     if (m_challenge && m_pending.size() < 8)
         m_pending.prepend(m_challengeBody); // re-checked, expiry included, on unlock
     clearChallenge();
-    if (m_state == QLatin1String("unlocked"))
+    if (m_state == QLatin1String("unlocked")) {
+        clearNotice(); // it may name an account
         setState(QStringLiteral("locked"));
+    }
     emit pairingChanged();
     emit tick();
 }
