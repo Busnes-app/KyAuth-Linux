@@ -23,6 +23,37 @@ bool isRun(const QString &pin)
     return up == n || down == n || same == n;
 }
 
+struct Header {
+    ScryptParams params;
+    QByteArray salt;
+    QByteArray sealed;
+};
+
+// Everything that can fail before a passcode is involved.
+std::optional<Header> readHeader(const QString &path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return std::nullopt;
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    if (o.value(QStringLiteral("v")).toInt() != 1)
+        return std::nullopt;
+    const QJsonObject kdf = o.value(QStringLiteral("kdf")).toObject();
+    Header h;
+    h.params.n = quint64(kdf.value(QStringLiteral("n")).toDouble());
+    h.params.r = quint32(kdf.value(QStringLiteral("r")).toInt());
+    h.params.p = quint32(kdf.value(QStringLiteral("p")).toInt());
+    h.salt = QByteArray::fromBase64(kdf.value(QStringLiteral("salt")).toString().toLatin1());
+    // Bound the work a tampered file can demand.
+    if (h.params.n < 2 || h.params.n > (1u << 18) || h.params.r < 1 || h.params.r > 8
+        || h.params.p != 1 || h.salt.size() != 16)
+        return std::nullopt;
+    h.sealed = QByteArray::fromBase64(o.value(QStringLiteral("data")).toString().toLatin1());
+    if (h.sealed.size() < 12 + 16)
+        return std::nullopt;
+    return h;
+}
+
 } // namespace
 
 QString passcodeProblem(const QString &passcode)
@@ -50,9 +81,11 @@ int retryDelaySeconds(int failures)
     return failures < 0 ? 0 : delays[qMin(failures, 4)];
 }
 
-std::optional<Vault> Vault::create(const QString &path, const QString &passcode, const ScryptParams &params)
+std::optional<Vault> Vault::create(const QString &path, const QString &passcode, const ScryptParams &params,
+                                   const QJsonObject &data)
 {
     Vault v;
+    v.data = data;
     v.m_path = path;
     v.m_params = params;
     v.m_salt = randomBytes(16);
@@ -64,32 +97,23 @@ std::optional<Vault> Vault::create(const QString &path, const QString &passcode,
 
 std::optional<Vault> Vault::open(const QString &path, const QString &passcode)
 {
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly))
+    const auto h = readHeader(path);
+    if (!h)
         return std::nullopt;
-    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
-    if (o.value(QStringLiteral("v")).toInt() != 1)
-        return std::nullopt;
-    const QJsonObject kdf = o.value(QStringLiteral("kdf")).toObject();
     Vault v;
     v.m_path = path;
-    v.m_params.n = quint64(kdf.value(QStringLiteral("n")).toDouble());
-    v.m_params.r = quint32(kdf.value(QStringLiteral("r")).toInt());
-    v.m_params.p = quint32(kdf.value(QStringLiteral("p")).toInt());
-    v.m_salt = QByteArray::fromBase64(kdf.value(QStringLiteral("salt")).toString().toLatin1());
-    // Bound the work a tampered file can demand.
-    if (v.m_params.n < 2 || v.m_params.n > (1u << 18) || v.m_params.r < 1 || v.m_params.r > 8
-        || v.m_params.p != 1 || v.m_salt.size() != 16)
-        return std::nullopt;
+    v.m_params = h->params;
+    v.m_salt = h->salt;
     v.m_key = scrypt(passcode.toUtf8(), v.m_salt, v.m_params);
-    auto plain = aesGcmOpen(v.m_key, kAad,
-                            QByteArray::fromBase64(o.value(QStringLiteral("data")).toString().toLatin1()));
+    auto plain = aesGcmOpen(v.m_key, kAad, h->sealed);
     if (!plain)
         return std::nullopt;
     v.data = QJsonDocument::fromJson(*plain).object();
     plain->fill(0);
     return v;
 }
+
+bool Vault::readable(const QString &path) { return readHeader(path).has_value(); }
 
 bool Vault::save() const
 {

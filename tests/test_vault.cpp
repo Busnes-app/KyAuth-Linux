@@ -70,11 +70,42 @@ private slots:
             k.insert(QLatin1String(bad.first), bad.second);
             o.insert(QStringLiteral("kdf"), k);
             QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
+            QVERIFY(!Vault::readable(path)); // refused before any passcode is counted
             QVERIFY(!Vault::open(path, QStringLiteral("402917")));
         }
         o.insert(QStringLiteral("kdf"), kdf);
         QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
         QVERIFY(Vault::open(path, QStringLiteral("402917"))); // the untouched header still opens
+    }
+
+    // A downgrade, a missing file or a damaged header is not a wrong passcode.
+    void unreadableIsNotAWrongPasscode()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("vault.json"));
+        QVERIFY(!Vault::readable(path));
+        QVERIFY(Vault::create(path, QStringLiteral("402917"), fast));
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+        f.close();
+        QVERIFY(Vault::readable(path));
+        o.insert(QStringLiteral("v"), 2);
+        QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
+        QVERIFY(!Vault::readable(path));
+        QVERIFY(writeFileAtomic(path, "{\"v\":1"));
+        QVERIFY(!Vault::readable(path));
+    }
+
+    // The first and only write of a new vault already holds its initial data.
+    void createWritesInitialData()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("vault.json"));
+        QVERIFY(Vault::create(path, QStringLiteral("402917"), fast, {{QStringLiteral("deviceIdentifier"), QStringLiteral("d")}}));
+        auto v = Vault::open(path, QStringLiteral("402917"));
+        QVERIFY(v);
+        QCOMPARE(v->data.value(QStringLiteral("deviceIdentifier")).toString(), QStringLiteral("d"));
     }
 };
 

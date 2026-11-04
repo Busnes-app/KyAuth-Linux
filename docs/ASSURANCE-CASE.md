@@ -41,7 +41,8 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 ## Trust boundaries
 
 1. **Phone → KyIdentity.** Every request is refused unless the URL is HTTPS. Redirects are
-   not followed, requests time out after 10 s, and at most 64 KiB of a reply is read
+   not followed, requests time out after 10 s of silence or 30 s in total, and a reply over
+   64 KiB is aborted while it arrives and reported as no response
    (`Controller::request`, `src/app/controller.cpp`). Before dispatch, that shared path
    requires QtNetwork's actual OpenSSL >=3 backend and sets TLS >=1.2, `VerifyPeer`
    and `CipherString=DEFAULT@SECLEVEL=2`. OpenSSL enforces signature/exchange strength;
@@ -92,20 +93,20 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 |---|---|---|
 | Secrets at rest | AES-256-GCM under a scrypt key (N=2^17, r=8, p=1), random 16-byte salt, fixed associated data, file mode 0600, atomic write | `src/core/vault.cpp`, `src/core/crypto.cpp` (`scrypt`, `aesGcmSeal`) |
 | Tampered vault demanding huge work | scrypt parameters bounded on open (N ≤ 2^18, r ≤ 8, p = 1, 16-byte salt) | `Vault::open` |
-| Passcode guessing on the phone | Delays of 5, 30 and 300 s before the 3rd to 5th tries; the 5th failure erases data; the attempt is saved before it is checked | `retryDelaySeconds`, `kWipeAfterFailures` (`src/core/vault.h`), `Controller::unlock` |
+| Passcode guessing on the phone | Delays of 5, 30 and 300 s before the 3rd to 5th tries; the 5th failure erases data; the attempt is saved before it is checked. An unsaved attempt, or a vault file that cannot be read or has an unknown format, is uncounted and never erases | `retryDelaySeconds`, `kWipeAfterFailures` (`src/core/vault.h`), `Vault::readable`, `Controller::unlock`; `tests/test_vault.cpp`, `tests/test_controller.cpp` |
 | Weak passcodes | At least 6 characters; common and sequential PINs refused | `passcodeProblem` |
-| Undersized TOTP keys | Import and generation require 16 decoded bytes for SHA1/SHA256/SHA512. Storage validation retains legacy records, while the account screen shows provider re-enrolment guidance and copying is refused without changing the clipboard | `src/core/totp.cpp` (`parseOtpauth`, `totpCode`, `TotpEntry::fromJson`), `Controller::accounts` / `copyCode`, `qml/Main.qml`; `tests/test_totp.cpp`, `tests/test_controller.cpp` |
+| Undersized TOTP keys | Import and generation require 10 decoded bytes (80 bits) for SHA1/SHA256/SHA512; keys under 16 bytes show a "Short key" warning. Storage validation retains older records under 80 bits, while the account screen shows provider re-enrolment guidance and copying is refused without changing the clipboard | `src/core/totp.cpp` (`parseOtpauth`, `totpCode`, `TotpEntry::fromJson`), `Controller::accounts` / `copyCode`, `qml/Main.qml`; `tests/test_totp.cpp`, `tests/test_controller.cpp` |
 | Plaintext or forged push | RFC 8291 decryption only; one record; the padding delimiter is checked | `webPushDecrypt` |
 | Push for another device, stale or replayed | Device ID, account, type and purpose must match; the expiry must be in the future and at most 10 minutes ahead | `parseChallenge`, `src/core/protocol.cpp` |
 | Answer redirection | HTTPS required on every request; registration URL same-origin; redirects not followed | `Controller::request`, `parsePairing` |
 | Weak TLS keys, certificates or exchange parameters | OpenSSL >=3 runtime, TLS >=1.2 and level 2 before dispatch; literal certificate floors (RSA/DH >=2048, EC >=224), filtered explicit anchors, pre-data peer-chain check, CA/name/time checks | `tlsCertificateKeyAllowed`, `Controller::request`, `src/app/main.cpp`; real TLS connections in `tests/test_tls.cpp` |
-| Oversized replies | Replies read up to 64 KiB | `Controller::request` |
+| Oversized replies | A reply over 64 KiB is aborted while it arrives; every request ends within 30 s | `Controller::request`; `tests/test_tls.cpp` |
 | Invalid curve points | Every peer public key is checked to be on P-256 before use | `loadP256` (`EVP_PKEY_public_check`) |
 | Injection into the UI | Server-supplied text is shown as `Text.PlainText` | `qml/Main.qml` |
 | Spoofed D-Bus callbacks | Token match, `calledFromDBus()`, sender must own the distributor's name | `UnifiedPush`, `src/app/unifiedpush.cpp` |
 | Clipboard leak | A copied code is cleared after 30 s if it is still there | `src/app/controller.cpp` |
 | Weak randomness | Keys, salts and nonces from OpenSSL `RAND_bytes` and `EVP_EC_gen`; a failure aborts | `randomBytes`, `generateP256` |
-| Secrets in logs | The source has no logging calls (`qDebug`, `qInfo`, `qWarning`, `qCritical`) | `src/` |
+| Secrets in logs | Only fixed diagnostics are logged: a bundled font that failed to load (`qWarning`), an OpenSSL failure that aborts (`qFatal`), and "KyAuth is already running" on stderr. `--smoke-test` echoes Qt messages to stderr. Nothing secret is logged | `src/` (`loadBundledFonts`, `src/core/crypto.cpp`, `src/app/main.cpp`) |
 | Memory-safety slips | `-Wall -Wextra -Werror=format-security -fstack-protector-strong`, default `_FORTIFY_SOURCE=2` with toolchain levels of at least 2 retained; OpenSSL objects in `unique_ptr` | `CMakeLists.txt`, `src/core/crypto.cpp` |
 
 TOTP accepts HMAC-SHA-1 because RFC 6238 and most issuers require it. HMAC-SHA-1 is not

@@ -14,9 +14,9 @@ and disclosure.
 
 ## Trust boundaries and limitations
 
-- TOTP import and generation require at least 128 decoded secret bits. Legacy short
-  secrets remain stored with their original account metadata, but cannot generate or
-  copy a code; the account card explains provider-side re-enrolment. No secrets are
+- TOTP import and generation require at least 80 decoded secret bits; the issuer chooses
+  the length, and keys under 128 bits carry a warning. Older secrets under 80 bits remain
+  stored with their original account metadata, but cannot generate or copy a code; the account card explains provider-side re-enrolment. No secrets are
   repaired, rewritten or silently removed. See [migration guidance](README.md#independent-use-and-prerequisites).
 - Authenticator secrets live on the device. The app must not upload them or write them to logs or crash reports.
 - A push or MFA approval is a deliberate user action. The app must not auto-approve, and a notification alone is not consent.
