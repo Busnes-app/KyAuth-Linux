@@ -53,8 +53,8 @@ CredentialProvider) are not ported.
   refuses (open, format, version, KDF header incl. power-of-two N) checked nothing, so it is
   uncounted and never erases; an unreadable file makes the lock page offer a confirmed
   "Erase KyAuth and start over". The lock page shows the tries left once one has failed.
-  A failure time in the future (the clock went back) is moved to now. Entering setup
-  (no vault) starts from zero failures.
+  A failure time in the future (the clock went back) is moved to now. Creating a
+  passcode saves zero failures before the vault is written.
 - The app locks whenever it leaves the foreground. `lock()` bumps an epoch; a key derivation
   that finishes in an older epoch never opens the vault. An unanswered push request is
   requeued, still encrypted, and re-checked on the next unlock. A challenge ID the server

@@ -74,6 +74,12 @@ private slots:
             QVERIFY(!Vault::readable(path)); // refused before any passcode is counted
             QVERIFY(!Vault::open(path, QStringLiteral("402917")));
         }
+        QJsonObject k = kdf; // scrypt needs N < 2^(16r)
+        k.insert(QStringLiteral("n"), double(1u << 16));
+        k.insert(QStringLiteral("r"), 1);
+        o.insert(QStringLiteral("kdf"), k);
+        QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
+        QVERIFY(!Vault::readable(path));
         o.insert(QStringLiteral("kdf"), kdf);
         QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
         QVERIFY(Vault::open(path, QStringLiteral("402917"))); // the untouched header still opens

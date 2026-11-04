@@ -461,10 +461,13 @@ private slots:
                                 QJsonDocument(QJsonObject{{QStringLiteral("failures"), 4},
                                                           {QStringLiteral("lastFailureMs"),
                                                            double(QDateTime::currentMSecsSinceEpoch())}}).toJson()));
+        {
+            FakeController first(dir.path(), fast);
+            QCOMPARE(first.state(), QStringLiteral("setup"));
+            setUp(first);
+        } // restarted before any unlock: the reset must already be on disk
         FakeController c(dir.path(), fast);
-        QCOMPARE(c.state(), QStringLiteral("setup"));
-        setUp(c);
-        c.lock();
+        QCOMPARE(c.state(), QStringLiteral("locked"));
         QCOMPARE(c.attemptsLeft(), kWipeAfterFailures);
         QCOMPARE(c.retryIn(), 0);
         c.unlock(QStringLiteral("999999x"));

@@ -75,10 +75,6 @@ Controller::Controller(const QString &dataDir, const ScryptParams &kdf, QObject 
     QFile::setPermissions(m_dir, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     loadState();
     m_state = QFile::exists(m_dir + QStringLiteral("/vault.json")) ? QStringLiteral("locked") : QStringLiteral("setup");
-    if (m_state == QLatin1String("setup")) { // a new vault starts with every attempt
-        m_failures = 0;
-        m_lastFailureMs = 0;
-    }
     m_pushStatus = tr("Starting push…");
 
     m_ticker.setInterval(1000);
@@ -169,6 +165,12 @@ void Controller::createPasscode(const QString &passcode, const QString &confirm)
         return say(problem);
     if (passcode != confirm)
         return say(tr("The passcodes do not match."));
+    // A new vault starts with every attempt, saved before the vault exists, so a count left by
+    // an erased or deleted vault can never carry over.
+    m_failures = 0;
+    m_lastFailureMs = 0;
+    if (!saveState())
+        return say(tr("Could not save KyAuth's state. Free some storage and try again."));
     setBusy(true);
     QPointer<Controller> self(this);
     const QString path = m_dir + QStringLiteral("/vault.json");
