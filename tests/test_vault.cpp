@@ -94,8 +94,10 @@ private slots:
         QVERIFY(f.open(QIODevice::ReadOnly));
         QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
         f.close();
+        QVERIFY(Vault::readable(path));
         o.insert(QStringLiteral("v"), 2);
         QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
+        QVERIFY(!Vault::readable(path));
         unreadable = false;
         QVERIFY(!Vault::open(path, QStringLiteral("402917"), &unreadable));
         QVERIFY(unreadable);

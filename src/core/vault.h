@@ -25,6 +25,8 @@ public:
     // nullopt with `*unreadable` false means a wrong passcode. `*unreadable` true means the
     // passcode was never checked: the file, its format or the key derivation failed.
     static std::optional<Vault> open(const QString &path, const QString &passcode, bool *unreadable = nullptr);
+    // The file, its format and its KDF header are usable: checked before an attempt is counted.
+    static bool readable(const QString &path);
 
     QJsonObject data;
     bool save() const;

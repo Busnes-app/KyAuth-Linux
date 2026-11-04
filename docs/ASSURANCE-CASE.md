@@ -106,7 +106,7 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 | Spoofed D-Bus callbacks | Token match, `calledFromDBus()`, sender must own the distributor's name | `UnifiedPush`, `src/app/unifiedpush.cpp` |
 | Clipboard leak | A copied code is cleared after 30 s if it is still there | `src/app/controller.cpp` |
 | Weak randomness | Keys, salts and nonces from OpenSSL `RAND_bytes` and `EVP_EC_gen`; a failure aborts | `randomBytes`, `generateP256` |
-| Secrets in logs | Only fixed diagnostics are logged: a bundled font that failed to load (`qWarning`) and an OpenSSL failure that aborts (`qFatal`). Nothing secret is logged | `src/` (`loadBundledFonts`, `src/core/crypto.cpp`) |
+| Secrets in logs | Only fixed diagnostics are logged: a bundled font that failed to load (`qWarning`), an OpenSSL failure that aborts (`qFatal`), and "KyAuth is already running" on stderr. `--smoke-test` echoes Qt messages to stderr. Nothing secret is logged | `src/` (`loadBundledFonts`, `src/core/crypto.cpp`, `src/app/main.cpp`) |
 | Memory-safety slips | `-Wall -Wextra -Werror=format-security -fstack-protector-strong`, default `_FORTIFY_SOURCE=2` with toolchain levels of at least 2 retained; OpenSSL objects in `unique_ptr` | `CMakeLists.txt`, `src/core/crypto.cpp` |
 
 TOTP accepts HMAC-SHA-1 because RFC 6238 and most issuers require it. HMAC-SHA-1 is not

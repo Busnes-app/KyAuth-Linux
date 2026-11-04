@@ -96,6 +96,7 @@ private:
     bool saveVault(const QJsonObject &before);
     void clearChallenge();
     void wipe();
+    QString unreadableNotice() const;
     void onUnlocked(ky::Vault vault);
 
     std::optional<ky::PushCredential> currentPush() const;

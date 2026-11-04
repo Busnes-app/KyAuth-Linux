@@ -396,6 +396,33 @@ private slots:
         QVERIFY(!c.vaultUnreadable());
     }
 
+    // A key derivation OpenSSL refuses (here N is not a power of two) is refunded, not counted.
+    void failedKeyDerivationIsNotCounted()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        c.lock();
+        const QString vault = dir.filePath(QStringLiteral("vault.json"));
+        QFile f(vault);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+        f.close();
+        QJsonObject kdf = o.value(QStringLiteral("kdf")).toObject();
+        kdf.insert(QStringLiteral("n"), 1000);
+        o.insert(QStringLiteral("kdf"), kdf);
+        QVERIFY(writeFileAtomic(vault, QJsonDocument(o).toJson()));
+        QVERIFY(Vault::readable(vault)); // the header passes; only the derivation fails
+        for (int i = 0; i < kWipeAfterFailures + 1; ++i) {
+            c.unlock(pass);
+            QVERIFY(c.busy());
+            QTRY_VERIFY(!c.busy());
+            QCOMPARE(c.attemptsLeft(), kWipeAfterFailures);
+        }
+        QVERIFY(c.vaultUnreadable());
+        QVERIFY(QFile::exists(vault));
+    }
+
     // The way out of an unreadable vault is an explicit erase, offered only then.
     void unreadableVaultCanBeErasedOnPurpose()
     {

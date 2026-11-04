@@ -49,16 +49,16 @@ CredentialProvider) are not ported.
 - Wrong passcodes: delays 0/5/30/300 s; the 5th consecutive failure erases local data. The
   attempt is counted, and must be saved, before the passcode is checked. Only a failed
   AES-GCM check is a wrong passcode: an attempt that could not be saved, or a vault that
-  could not be read or derived (`Vault::open`'s `unreadable`, any OpenSSL error but a tag
-  mismatch), is uncounted and never erases; the lock page then offers a confirmed "Erase
+  could not be read (`Vault::readable`, checked before counting) or derived (`Vault::open`'s
+  `unreadable`, any OpenSSL error but a tag mismatch, refunded), is uncounted and never erases; the lock page then offers a confirmed "Erase
   KyAuth and start over". The lock page shows the tries left once one has failed. A
   failure time in the future (the clock went back) is moved to now. A `state.json` save
   that fails is retried every second.
 - The app locks whenever it leaves the foreground. `lock()` bumps an epoch; a key derivation
   that finishes in an older epoch never opens the vault. An unanswered push request is
   requeued, still encrypted, and re-checked on the next unlock. A challenge ID the server
-  has answered is never shown again until it expires; 429, 5xx and no response leave it
-  answerable. The locked queue holds 8
+  has answered is never shown again until it expires, and its queued copy is dropped; 429,
+  5xx and no response leave it answerable. The locked queue holds 8
   pushes and drops the oldest.
 - Approve/deny carry the challenge ID the screen showed; the controller refuses any other,
   and the QML clears a typed number when the shown request changes.

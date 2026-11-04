@@ -200,6 +200,13 @@ void Controller::unlock(const QString &passcode)
 {
     if (m_state != QLatin1String("locked") || m_busy || retryIn() > 0)
         return;
+    const QString path = m_dir + QStringLiteral("/vault.json");
+    // A file that cannot be read never gets as far as a passcode check, so it is never counted.
+    if (!Vault::readable(path)) {
+        m_vaultUnreadable = true;
+        emit tick();
+        return say(unreadableNotice());
+    }
     // Count the attempt before checking it, so killing the app cannot skip the count.
     const int failuresBefore = m_failures;
     const qint64 lastFailureBefore = m_lastFailureMs;
@@ -212,7 +219,6 @@ void Controller::unlock(const QString &passcode)
     }
     setBusy(true);
     QPointer<Controller> self(this);
-    const QString path = m_dir + QStringLiteral("/vault.json");
     const quint64 epoch = m_epoch;
     QThread *t = QThread::create([self, path, passcode, epoch, failuresBefore, lastFailureBefore] {
         bool unreadable = false;
@@ -222,14 +228,12 @@ void Controller::unlock(const QString &passcode)
                 return;
             self->setBusy(false);
             self->m_vaultUnreadable = unreadable;
-            if (unreadable) { // the passcode was never checked: undo the count, never erase
+            emit self->tick();
+            if (unreadable) { // key derivation failed (memory): never checked, so undo the count
                 self->m_failures = failuresBefore;
                 self->m_lastFailureMs = lastFailureBefore;
                 self->saveState();
-                emit self->tick();
-                return self->say(tr("Could not read the vault, so the passcode was not checked and nothing was erased. "
-                                    "Close other apps and try again. If this keeps happening, install the newest "
-                                    "KyAuth, or erase KyAuth and start over."));
+                return self->say(self->unreadableNotice());
             }
             if (v) {
                 self->m_failures = 0;
@@ -280,11 +284,20 @@ void Controller::lock()
     emit tick();
 }
 
+QString Controller::unreadableNotice() const
+{
+    return tr("Could not read the vault, so the passcode was not checked and nothing was erased. "
+              "Close other apps and try again. If this keeps happening, install the newest KyAuth, "
+              "or erase KyAuth and start over.");
+}
+
 void Controller::eraseUnreadable()
 {
     if (m_state != QLatin1String("locked") || m_busy || !m_vaultUnreadable)
         return;
     wipe();
+    if (QFile::exists(m_dir + QStringLiteral("/vault.json")))
+        return say(tr("Could not erase the vault file. Check the storage and try again."));
     say(tr("KyAuth erased its data."), "info");
 }
 
@@ -681,6 +694,7 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
     const QString server = p.value(QStringLiteral("serverUrl")).toString();
     const QString deviceId = p.value(QStringLiteral("deviceId")).toString();
     const Challenge c = *m_challenge;
+    const QByteArray pushed = m_challengeBody;
     auto msg = pushResponseMessage(originOf(server), p.value(QStringLiteral("userId")).toString(), deviceId, c,
                                    approve, digits);
     const QByteArray sig = msg ? signDer(keyFrom(p.value(QStringLiteral("key"))), *msg) : QByteArray();
@@ -693,14 +707,15 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
                            {QStringLiteral("signature"), QString::fromLatin1(sig.toBase64())}};
     setBusy(true);
     request("POST", server + QStringLiteral("/api/mfa/push/respond"), body,
-            [this, c, approve](int status, const QByteArray &reply) {
+            [this, c, pushed, approve](int status, const QByteArray &reply) {
                 setBusy(false);
                 QString error;
                 const Decision d = parseDecision(status, reply, c.challengeId, &error);
                 // Answered (or refused) by the server: never offer it again, even if a lock requeued it.
                 // Keep it when the server did not decide: no response, 429 or 5xx.
                 if (status > 0 && status < 500 && status != 429) {
-                    m_answered.insert(c.challengeId, c.expiresAtMs);
+                    m_answered.insert(c.challengeId, c.expiresAtMs); // and any re-delivery of it
+                    m_pending.removeAll(pushed); // frees its queue slot now
                     if (m_challenge && m_challenge->challengeId == c.challengeId)
                         clearChallenge();
                 }
