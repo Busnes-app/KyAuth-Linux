@@ -49,9 +49,7 @@ private slots:
         QVERIFY(!f.readAll().contains("seed-material"));
         QCOMPARE(f.permissions() & 0x0077, QFileDevice::Permissions()); // no group/other bits
 
-        bool unreadable = true;
-        QVERIFY(!Vault::open(path, QStringLiteral("402918"), &unreadable));
-        QVERIFY(!unreadable); // a wrong passcode was checked
+        QVERIFY(!Vault::open(path, QStringLiteral("402918")));
         auto again = Vault::open(path, QStringLiteral("402917"));
         QVERIFY(again);
         QCOMPARE(again->data.value(QStringLiteral("k")).toString(), QStringLiteral("seed-material"));
@@ -72,9 +70,8 @@ private slots:
             k.insert(QLatin1String(bad.first), bad.second);
             o.insert(QStringLiteral("kdf"), k);
             QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
-            bool unreadable = false;
-            QVERIFY(!Vault::open(path, QStringLiteral("402917"), &unreadable));
-            QVERIFY(unreadable); // never checked: must not count as a wrong passcode
+            QVERIFY(!Vault::readable(path)); // refused before any passcode is counted
+            QVERIFY(!Vault::open(path, QStringLiteral("402917")));
         }
         o.insert(QStringLiteral("kdf"), kdf);
         QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
@@ -86,9 +83,7 @@ private slots:
     {
         QTemporaryDir dir;
         const QString path = dir.filePath(QStringLiteral("vault.json"));
-        bool unreadable = false;
-        QVERIFY(!Vault::open(path, QStringLiteral("402917"), &unreadable));
-        QVERIFY(unreadable);
+        QVERIFY(!Vault::readable(path));
         QVERIFY(Vault::create(path, QStringLiteral("402917"), fast));
         QFile f(path);
         QVERIFY(f.open(QIODevice::ReadOnly));
@@ -98,13 +93,8 @@ private slots:
         o.insert(QStringLiteral("v"), 2);
         QVERIFY(writeFileAtomic(path, QJsonDocument(o).toJson()));
         QVERIFY(!Vault::readable(path));
-        unreadable = false;
-        QVERIFY(!Vault::open(path, QStringLiteral("402917"), &unreadable));
-        QVERIFY(unreadable);
         QVERIFY(writeFileAtomic(path, "{\"v\":1"));
-        unreadable = false;
-        QVERIFY(!Vault::open(path, QStringLiteral("402917"), &unreadable));
-        QVERIFY(unreadable);
+        QVERIFY(!Vault::readable(path));
     }
 
     // The first and only write of a new vault already holds its initial data.

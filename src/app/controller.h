@@ -58,7 +58,7 @@ public:
     Q_INVOKABLE void createPasscode(const QString &passcode, const QString &confirm);
     Q_INVOKABLE void unlock(const QString &passcode);
     Q_INVOKABLE void lock();
-    // Only after an unlock found the vault unreadable: the five-try erase never runs then.
+    // Only after an unlock found the vault file unreadable, which is never counted towards the erase.
     Q_INVOKABLE void eraseUnreadable();
     Q_INVOKABLE bool addAccount(const QString &uri);
     Q_INVOKABLE bool addKey(const QString &name, const QString &key); // a typed Base32 setup key
@@ -91,7 +91,7 @@ private:
     void say(const QString &text, const char *kind = "danger");
     void setPushStatus(const QString &s);
     void loadState();
-    bool saveState(); // a failed save is retried every second until one succeeds
+    bool saveState() const;
     // Saves the vault; on failure restores `before` and reports it.
     bool saveVault(const QJsonObject &before);
     void clearChallenge();
@@ -128,7 +128,6 @@ private:
     QList<QByteArray> m_pending; // encrypted pushes that arrived while locked
     QHash<QString, qint64> m_answered; // challenge ID -> expiry: answered, never shown again
     bool m_vaultUnreadable = false;
-    bool m_stateUnsaved = false;
     QTimer m_ticker;
     QNetworkAccessManager m_net;
     UnifiedPush *m_up = nullptr;

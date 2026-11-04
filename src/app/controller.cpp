@@ -85,8 +85,6 @@ Controller::Controller(const QString &dataDir, const ScryptParams &kdf, QObject 
             m_lastFailureMs = nowMs();
             saveState();
         }
-        if (m_stateUnsaved) // never let a refund or reset live only in memory
-            saveState();
         for (auto it = m_answered.begin(); it != m_answered.end();)
             it = it.value() <= nowMs() ? m_answered.erase(it) : std::next(it);
         emit tick();
@@ -138,14 +136,13 @@ void Controller::loadState()
     m_latestToken = o.value(QStringLiteral("pushToken")).toString();
 }
 
-bool Controller::saveState()
+bool Controller::saveState() const
 {
     const QJsonObject o{{QStringLiteral("failures"), m_failures},
                         {QStringLiteral("lastFailureMs"), double(m_lastFailureMs)},
                         {QStringLiteral("unifiedPushToken"), m_upToken},
                         {QStringLiteral("pushToken"), m_latestToken}};
-    m_stateUnsaved = !writeFileAtomic(m_dir + QStringLiteral("/state.json"), QJsonDocument(o).toJson(QJsonDocument::Compact));
-    return !m_stateUnsaved;
+    return writeFileAtomic(m_dir + QStringLiteral("/state.json"), QJsonDocument(o).toJson(QJsonDocument::Compact));
 }
 
 // ---- lock ---------------------------------------------------------------------------------
@@ -207,6 +204,8 @@ void Controller::unlock(const QString &passcode)
         emit tick();
         return say(unreadableNotice());
     }
+    m_vaultUnreadable = false;
+    emit tick();
     // Count the attempt before checking it, so killing the app cannot skip the count.
     const int failuresBefore = m_failures;
     const qint64 lastFailureBefore = m_lastFailureMs;
@@ -220,21 +219,12 @@ void Controller::unlock(const QString &passcode)
     setBusy(true);
     QPointer<Controller> self(this);
     const quint64 epoch = m_epoch;
-    QThread *t = QThread::create([self, path, passcode, epoch, failuresBefore, lastFailureBefore] {
-        bool unreadable = false;
-        auto v = Vault::open(path, passcode, &unreadable);
-        QMetaObject::invokeMethod(qGuiApp, [self, v, epoch, unreadable, failuresBefore, lastFailureBefore]() mutable {
+    QThread *t = QThread::create([self, path, passcode, epoch] {
+        auto v = Vault::open(path, passcode);
+        QMetaObject::invokeMethod(qGuiApp, [self, v, epoch]() mutable {
             if (!self)
                 return;
             self->setBusy(false);
-            self->m_vaultUnreadable = unreadable;
-            emit self->tick();
-            if (unreadable) { // key derivation failed (memory): never checked, so undo the count
-                self->m_failures = failuresBefore;
-                self->m_lastFailureMs = lastFailureBefore;
-                self->saveState();
-                return self->say(self->unreadableNotice());
-            }
             if (v) {
                 self->m_failures = 0;
                 self->m_lastFailureMs = 0;
@@ -286,9 +276,8 @@ void Controller::lock()
 
 QString Controller::unreadableNotice() const
 {
-    return tr("Could not read the vault, so the passcode was not checked and nothing was erased. "
-              "Close other apps and try again. If this keeps happening, install the newest KyAuth, "
-              "or erase KyAuth and start over.");
+    return tr("Could not read the vault file, so the passcode was not checked and nothing was erased. "
+              "If you installed an older KyAuth, install the newest one. Otherwise erase KyAuth and start over.");
 }
 
 void Controller::eraseUnreadable()

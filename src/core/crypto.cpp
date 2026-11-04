@@ -74,7 +74,7 @@ QByteArray hkdf(const QByteArray &salt, const QByteArray &ikm, const QByteArray 
 }
 
 std::optional<QByteArray> aesGcm(bool encrypt, const QByteArray &key, const QByteArray &iv,
-                                 const QByteArray &aad, const QByteArray &input, bool *tagMismatch = nullptr)
+                                 const QByteArray &aad, const QByteArray &input)
 {
     const EVP_CIPHER *cipher = key.size() == 16 ? EVP_aes_128_gcm()
                              : key.size() == 32 ? EVP_aes_256_gcm() : nullptr;
@@ -92,11 +92,8 @@ std::optional<QByteArray> aesGcm(bool encrypt, const QByteArray &key, const QByt
     if (!encrypt && EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG, 16, tag.data()) != 1)
         return std::nullopt;
     int tail = 0;
-    if (EVP_CipherFinal_ex(ctx.get(), u(out) + len, &tail) != 1) {
-        if (tagMismatch && !encrypt)
-            *tagMismatch = true; // the only failure that means a wrong key or altered data
+    if (EVP_CipherFinal_ex(ctx.get(), u(out) + len, &tail) != 1)
         return std::nullopt;
-    }
     if (encrypt) {
         if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, 16, tag.data()) != 1)
             return std::nullopt;
@@ -292,12 +289,11 @@ QByteArray aesGcmSeal(const QByteArray &key, const QByteArray &aad, const QByteA
     return iv + *ct;
 }
 
-std::optional<QByteArray> aesGcmOpen(const QByteArray &key, const QByteArray &aad, const QByteArray &sealed,
-                                     bool *tagMismatch)
+std::optional<QByteArray> aesGcmOpen(const QByteArray &key, const QByteArray &aad, const QByteArray &sealed)
 {
     if (sealed.size() < 12 + 16)
         return std::nullopt;
-    return aesGcm(false, key, sealed.left(12), aad, sealed.mid(12), tagMismatch);
+    return aesGcm(false, key, sealed.left(12), aad, sealed.mid(12));
 }
 
 } // namespace ky

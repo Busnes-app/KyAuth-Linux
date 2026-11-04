@@ -504,7 +504,7 @@ ApplicationWindow {
                 visible: controller.vaultUnreadable && !controller.busy
                 text: qsTr("Erase KyAuth and start over")
                 danger: true
-                onClicked: confirm.ask(qsTr("Erase KyAuth? Every account in the vault is lost. If this happened only once, try unlocking again first. If you installed an older KyAuth, install the newest one instead."),
+                onClicked: confirm.ask(qsTr("Erase KyAuth? Every account in the vault is lost. If you installed an older KyAuth, install the newest one instead."),
                                        qsTr("Erase"), function () { controller.eraseUnreadable() })
             }
             BusyIndicator { running: controller.busy; visible: running; Layout.alignment: Qt.AlignHCenter }

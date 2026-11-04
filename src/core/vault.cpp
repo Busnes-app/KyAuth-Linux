@@ -95,11 +95,8 @@ std::optional<Vault> Vault::create(const QString &path, const QString &passcode,
     return v;
 }
 
-std::optional<Vault> Vault::open(const QString &path, const QString &passcode, bool *unreadable)
+std::optional<Vault> Vault::open(const QString &path, const QString &passcode)
 {
-    bool ignored;
-    bool &failed = unreadable ? *unreadable : ignored;
-    failed = true; // until the passcode is actually checked
     const auto h = readHeader(path);
     if (!h)
         return std::nullopt;
@@ -107,13 +104,8 @@ std::optional<Vault> Vault::open(const QString &path, const QString &passcode, b
     v.m_path = path;
     v.m_params = h->params;
     v.m_salt = h->salt;
-    const QByteArray &sealed = h->sealed;
     v.m_key = scrypt(passcode.toUtf8(), v.m_salt, v.m_params);
-    if (v.m_key.isEmpty()) // out of memory, or parameters OpenSSL refuses
-        return std::nullopt;
-    bool wrongKey = false;
-    auto plain = aesGcmOpen(v.m_key, kAad, sealed, &wrongKey);
-    failed = !plain && !wrongKey;
+    auto plain = aesGcmOpen(v.m_key, kAad, h->sealed);
     if (!plain)
         return std::nullopt;
     v.data = QJsonDocument::fromJson(*plain).object();
