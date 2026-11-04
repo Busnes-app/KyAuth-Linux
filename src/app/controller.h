@@ -4,6 +4,7 @@
 #include "totp.h"
 #include "vault.h"
 
+#include <QHash>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QObject>
@@ -23,6 +24,7 @@ class Controller : public QObject {
     Q_PROPERTY(QString noticeKind READ noticeKind NOTIFY noticeChanged) // danger | warning | success | info
     Q_PROPERTY(int retryIn READ retryIn NOTIFY tick)
     Q_PROPERTY(int attemptsLeft READ attemptsLeft NOTIFY tick)   // wrong passcodes left before the erase
+    Q_PROPERTY(bool vaultUnreadable READ vaultUnreadable NOTIFY tick) // the last unlock could not read the vault
     Q_PROPERTY(QVariantList accounts READ accounts NOTIFY tick)
     Q_PROPERTY(QVariantMap pairing READ pairing NOTIFY pairingChanged)
     Q_PROPERTY(QString pushStatus READ pushStatus NOTIFY pushStatusChanged)
@@ -43,6 +45,7 @@ public:
     QString noticeKind() const { return m_noticeKind; }
     int retryIn() const;
     int attemptsLeft() const { return ky::kWipeAfterFailures - m_failures; }
+    bool vaultUnreadable() const { return m_vaultUnreadable; }
     QVariantList accounts() const;
     QVariantMap pairing() const;
     QString pushStatus() const { return m_pushStatus; }
@@ -55,6 +58,8 @@ public:
     Q_INVOKABLE void createPasscode(const QString &passcode, const QString &confirm);
     Q_INVOKABLE void unlock(const QString &passcode);
     Q_INVOKABLE void lock();
+    // Only after an unlock found the vault unreadable: the five-try erase never runs then.
+    Q_INVOKABLE void eraseUnreadable();
     Q_INVOKABLE bool addAccount(const QString &uri);
     Q_INVOKABLE bool addKey(const QString &name, const QString &key); // a typed Base32 setup key
     Q_INVOKABLE void removeAccount(const QString &id);
@@ -86,7 +91,7 @@ private:
     void say(const QString &text, const char *kind = "danger");
     void setPushStatus(const QString &s);
     void loadState();
-    bool saveState() const;
+    bool saveState(); // a failed save is retried every second until one succeeds
     // Saves the vault; on failure restores `before` and reports it.
     bool saveVault(const QJsonObject &before);
     void clearChallenge();
@@ -120,6 +125,9 @@ private:
     quint64 m_epoch = 0;        // bumped by lock(): a KDF result from an older epoch is dropped
     bool m_refreshing = false;
     QList<QByteArray> m_pending; // encrypted pushes that arrived while locked
+    QHash<QString, qint64> m_answered; // challenge ID -> expiry: answered, never shown again
+    bool m_vaultUnreadable = false;
+    bool m_stateUnsaved = false;
     QTimer m_ticker;
     QNetworkAccessManager m_net;
     UnifiedPush *m_up = nullptr;

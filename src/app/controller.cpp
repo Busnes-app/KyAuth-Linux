@@ -85,6 +85,10 @@ Controller::Controller(const QString &dataDir, const ScryptParams &kdf, QObject 
             m_lastFailureMs = nowMs();
             saveState();
         }
+        if (m_stateUnsaved) // never let a refund or reset live only in memory
+            saveState();
+        for (auto it = m_answered.begin(); it != m_answered.end();)
+            it = it.value() <= nowMs() ? m_answered.erase(it) : std::next(it);
         emit tick();
     });
     m_ticker.start();
@@ -134,13 +138,14 @@ void Controller::loadState()
     m_latestToken = o.value(QStringLiteral("pushToken")).toString();
 }
 
-bool Controller::saveState() const
+bool Controller::saveState()
 {
     const QJsonObject o{{QStringLiteral("failures"), m_failures},
                         {QStringLiteral("lastFailureMs"), double(m_lastFailureMs)},
                         {QStringLiteral("unifiedPushToken"), m_upToken},
                         {QStringLiteral("pushToken"), m_latestToken}};
-    return writeFileAtomic(m_dir + QStringLiteral("/state.json"), QJsonDocument(o).toJson(QJsonDocument::Compact));
+    m_stateUnsaved = !writeFileAtomic(m_dir + QStringLiteral("/state.json"), QJsonDocument(o).toJson(QJsonDocument::Compact));
+    return !m_stateUnsaved;
 }
 
 // ---- lock ---------------------------------------------------------------------------------
@@ -216,12 +221,15 @@ void Controller::unlock(const QString &passcode)
             if (!self)
                 return;
             self->setBusy(false);
+            self->m_vaultUnreadable = unreadable;
             if (unreadable) { // the passcode was never checked: undo the count, never erase
                 self->m_failures = failuresBefore;
                 self->m_lastFailureMs = lastFailureBefore;
                 self->saveState();
-                return self->say(tr("Could not read the vault, so the passcode was not checked. Close other apps "
-                                    "to free memory and try again. Nothing was erased."));
+                emit self->tick();
+                return self->say(tr("Could not read the vault, so the passcode was not checked and nothing was erased. "
+                                    "Close other apps and try again. If this keeps happening, install the newest "
+                                    "KyAuth, or erase KyAuth and start over."));
             }
             if (v) {
                 self->m_failures = 0;
@@ -272,6 +280,14 @@ void Controller::lock()
     emit tick();
 }
 
+void Controller::eraseUnreadable()
+{
+    if (m_state != QLatin1String("locked") || m_busy || !m_vaultUnreadable)
+        return;
+    wipe();
+    say(tr("KyAuth erased its data."), "info");
+}
+
 void Controller::wipe()
 {
     if (m_up)
@@ -284,6 +300,7 @@ void Controller::wipe()
     m_upToken.clear();
     m_latestToken.clear();
     m_pending.clear();
+    m_vaultUnreadable = false;
     setState(QStringLiteral("setup"));
     setPushStatus(tr("Push stopped. Restart KyAuth after setting it up again."));
 }
@@ -495,7 +512,7 @@ void Controller::handlePushBody(const QByteArray &body)
         return;
     auto c = parseChallenge(*plain, p.value(QStringLiteral("deviceId")).toString(),
                             p.value(QStringLiteral("userId")).toString(), nowMs());
-    if (c) {
+    if (c && !m_answered.contains(c->challengeId)) {
         m_challenge = c;
         m_challengeBody = body;
         emit tick();
@@ -664,7 +681,6 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
     const QString server = p.value(QStringLiteral("serverUrl")).toString();
     const QString deviceId = p.value(QStringLiteral("deviceId")).toString();
     const Challenge c = *m_challenge;
-    const QByteArray pushed = m_challengeBody;
     auto msg = pushResponseMessage(originOf(server), p.value(QStringLiteral("userId")).toString(), deviceId, c,
                                    approve, digits);
     const QByteArray sig = msg ? signDer(keyFrom(p.value(QStringLiteral("key"))), *msg) : QByteArray();
@@ -677,14 +693,14 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
                            {QStringLiteral("signature"), QString::fromLatin1(sig.toBase64())}};
     setBusy(true);
     request("POST", server + QStringLiteral("/api/mfa/push/respond"), body,
-            [this, c, pushed, approve](int status, const QByteArray &reply) {
+            [this, c, approve](int status, const QByteArray &reply) {
                 setBusy(false);
                 QString error;
                 const Decision d = parseDecision(status, reply, c.challengeId, &error);
                 // Answered (or refused) by the server: never offer it again, even if a lock requeued it.
                 // Keep it when the server did not decide: no response, 429 or 5xx.
                 if (status > 0 && status < 500 && status != 429) {
-                    m_pending.removeAll(pushed);
+                    m_answered.insert(c.challengeId, c.expiresAtMs);
                     if (m_challenge && m_challenge->challengeId == c.challengeId)
                         clearChallenge();
                 }

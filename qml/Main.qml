@@ -487,7 +487,7 @@ ApplicationWindow {
             }
             Status {
                 objectName: "attemptsLeft"
-                visible: controller.attemptsLeft < 5
+                visible: controller.attemptsLeft < 5 && !controller.busy // counted before the check finishes
                 kind: "danger"
                 word: controller.attemptsLeft <= 1 ? qsTr("Last try before erase")
                                                    : qsTr("%1 tries left before erase").arg(controller.attemptsLeft)
@@ -498,6 +498,14 @@ ApplicationWindow {
                 filled: true
                 enabled: pass.enabled
                 onClicked: { controller.unlock(pass.text); pass.text = "" }
+            }
+            Pill {
+                objectName: "eraseUnreadable"
+                visible: controller.vaultUnreadable && !controller.busy
+                text: qsTr("Erase KyAuth and start over")
+                danger: true
+                onClicked: confirm.ask(qsTr("Erase KyAuth? Every account in the vault is lost. If you installed an older KyAuth, install the newest one instead."),
+                                       qsTr("Erase"), function () { controller.eraseUnreadable() })
             }
             BusyIndicator { running: controller.busy; visible: running; Layout.alignment: Qt.AlignHCenter }
         }

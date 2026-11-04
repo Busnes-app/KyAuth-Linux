@@ -41,7 +41,8 @@ QByteArray scrypt(const QByteArray &passcode, const QByteArray &salt, const Scry
 
 // AES-256-GCM. seal returns iv(12) || ciphertext || tag(16).
 QByteArray aesGcmSeal(const QByteArray &key, const QByteArray &aad, const QByteArray &plaintext);
+// `*tagMismatch` is set only when authentication fails, not on an OpenSSL error.
 std::optional<QByteArray> aesGcmOpen(const QByteArray &key, const QByteArray &aad,
-                                     const QByteArray &sealed);
+                                     const QByteArray &sealed, bool *tagMismatch = nullptr);
 
 } // namespace ky

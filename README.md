@@ -21,8 +21,8 @@ Local TOTP works without a Ky server. Set a strong passphrase, add an `otpauth:/
 setup link or setup key (or scan on Ubuntu Touch), and verify a generated code at the issuing site.
 Keep its recovery codes separately; this app has no vault backup/export/sync workflow.
 New accounts need at least 80 bits of secret material (16 Base32 characters, 10 decoded
-bytes). The issuer chooses the length; a key under the 128 bits RFC 4226 recommends works
-and shows **Short key** on its card. Shorter secrets are refused for every supported HMAC
+bytes). RFC 4226 requires 128 bits, but many issuers hand out 80-bit keys, so KyAuth accepts
+them for compatibility and shows **Short key** on the card. Shorter secrets are refused for every supported HMAC
 algorithm. An older account with a secret under 80 bits stays in your encrypted vault
 with its original name, issuer, ID and secret, but shows **Unavailable** instead of a code. Use the
 provider's recovery/sign-in process to set up two-step verification again, confirm

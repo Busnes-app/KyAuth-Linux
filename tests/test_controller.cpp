@@ -387,11 +387,55 @@ private slots:
             QTRY_VERIFY(!c.busy());
             QVERIFY(c.notice().contains(QStringLiteral("not checked")));
         }
+        QVERIFY(c.vaultUnreadable());
         QVERIFY(QFile::setPermissions(vault, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
         QCOMPARE(c.state(), QStringLiteral("locked"));
         QCOMPARE(c.attemptsLeft(), kWipeAfterFailures);
         c.unlock(pass);
         QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+        QVERIFY(!c.vaultUnreadable());
+    }
+
+    // The way out of an unreadable vault is an explicit erase, offered only then.
+    void unreadableVaultCanBeErasedOnPurpose()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        c.lock();
+        const QString vault = dir.filePath(QStringLiteral("vault.json"));
+        c.eraseUnreadable(); // readable: refused
+        QVERIFY(QFile::exists(vault));
+        QVERIFY(writeFileAtomic(vault, "{\"v\":2}")); // written by a newer KyAuth
+        c.unlock(pass);
+        QTRY_VERIFY(!c.busy());
+        QVERIFY(c.vaultUnreadable());
+        QVERIFY(QFile::exists(vault));
+        c.eraseUnreadable();
+        QCOMPARE(c.state(), QStringLiteral("setup"));
+        QVERIFY(!QFile::exists(vault));
+        QVERIFY(!c.vaultUnreadable());
+    }
+
+    // A state.json write that failed is retried, so memory and disk agree again.
+    void failedStateSaveIsRetried()
+    {
+        if (geteuid() == 0)
+            QSKIP("root ignores directory permissions");
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        setUp(c);
+        QVERIFY(readOnly(dir.path(), true));
+        b.m_failures = 3;
+        const bool saved = b.saveState();
+        QVERIFY(readOnly(dir.path(), false));
+        QVERIFY(!saved);
+        auto failuresOnDisk = [&dir] {
+            QFile f(dir.filePath(QStringLiteral("state.json")));
+            return f.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(f.readAll()).object().value(QStringLiteral("failures")).toInt() : -1;
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(failuresOnDisk(), 3, 3000);
     }
 
     void wrongPasscodeCountsDown()
@@ -451,10 +495,12 @@ private slots:
         setUp(c);
         pair(c);
         b.handlePushBody(challengePush(c, "c1"));
+        const QByteArray again = challengePush(c, "c1"); // the server re-sends it, freshly encrypted
         c.deny(QStringLiteral("c1"));
         QCOMPARE(c.requests.size(), 1);
         c.lock(); // the user switched away before the reply
         c.requests.at(0).done(200, "{\"success\":false}");
+        b.handlePushBody(again);
         c.unlock(pass);
         QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
         QVERIFY(c.challenge().isEmpty());
