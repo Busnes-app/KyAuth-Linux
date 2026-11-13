@@ -9,6 +9,8 @@ set(CMAKE_AUTORCC ON)
 # Ubuntu Touch: Ubuntu Push via Lomiri PushClient, click layout. Otherwise UnifiedPush over D-Bus.
 option(KYAUTH_UBUNTU_TOUCH "Build the Ubuntu Touch click flavor" OFF)
 option(KYAUTH_TESTS "Build tests" ON)
+# libFuzzer targets for scanned/pasted input; clang only. See fuzz/CMakeLists.txt.
+option(KYAUTH_FUZZ "Build the libFuzzer targets in fuzz/ (needs clang)" OFF)
 
 # Qt 5.15 is the stable Ubuntu Touch target; Qt 6 builds from the same source.
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core)
@@ -142,4 +144,8 @@ if(KYAUTH_TESTS)
     add_test(NAME qml_smoke COMMAND kyauth --smoke-test)
     # Software scene graph: headless runners have no OpenGL.
     set_tests_properties(qml_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+endif()
+
+if(KYAUTH_FUZZ)
+    add_subdirectory(fuzz)
 endif()

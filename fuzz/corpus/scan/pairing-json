@@ -1,0 +1,1 @@
+{"type":"kyidentity_device_pairing","serverUrl":"https://id.example.org/","registrationUrl":"https://id.example.org/api/notifications/native/register","pairingToken":"pt-123","pinCode":"482913","userId":"u1","username":"alice","expiresAt":1893456000}
