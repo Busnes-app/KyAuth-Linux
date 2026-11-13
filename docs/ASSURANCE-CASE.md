@@ -118,9 +118,11 @@ affected by SHA-1's collision weakness.
   A 6-digit PIN falls in about 6 hours on a 20-core desktop (README). Use a passphrase.
 - **The device is graded `none`.** There is no hardware attestation, so it cannot be used for
   MFA-grade device sign-on.
-- **The click package is unsigned,** and no release is published yet
+- **The click package is unsigned** (it carries only build provenance), and no release is published yet
   ([VERIFYING-RELEASES.md](VERIFYING-RELEASES.md)).
-- No dynamic memory-error checking (sanitizers or fuzzing) runs, though the core is C++.
+- Dynamic memory-error checking covers only the scanned/pasted-code parsers: CI fuzzes
+  `parsePairing` and `parseOtpauth` under ASan and UBSan for a minute on every pull request
+  (`fuzz/`). The rest of the C++ core runs without sanitizers.
   CodeQL static analysis runs on every push and pull request (`.github/workflows/codeql.yml`). No independent security audit has taken place.
 
 ## Evidence

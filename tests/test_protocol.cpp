@@ -133,6 +133,15 @@ private slots:
         QVERIFY(!parsePairing(qr("https://u:p@a.example", "x"), 1000, &err));
         QVERIFY(!parsePairing(qr("https://a.example", ""), 1000, &err)); // PIN without userId
         QVERIFY(!parsePairing(qr("https://a.example", "x", 0, "", "other"), 1000, &err));
+
+        // Found by fuzz/scan_fuzzer under UBSan: a double this large does not fit qint64.
+        for (const char *exp : {"1e300", "-1e300"}) {
+            err.clear();
+            QVERIFY(!parsePairing(QStringLiteral("{\"type\":\"kyidentity_device_pairing\","
+                                                 "\"serverUrl\":\"https://a.example\",\"pairingToken\":\"x\","
+                                                 "\"expiresAt\":%1}").arg(QLatin1String(exp)), 1000, &err));
+            QCOMPARE(err, QStringLiteral("The pairing code's expiry time is not valid."));
+        }
     }
 
     void registration()

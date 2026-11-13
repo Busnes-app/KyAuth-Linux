@@ -7,6 +7,8 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include <cmath>
+
 namespace ky {
 namespace {
 
@@ -88,7 +90,14 @@ std::optional<PairingRequest> parsePairing(const QString &text, qint64 nowSecond
         r.pinCode = field(o, "pinCode");
         r.userId = field(o, "userId");
         r.username = field(o, "username");
-        expiresAt = qint64(o.value(QStringLiteral("expiresAt")).toDouble());
+        // A JSON number is a double; converting one outside qint64 (1e300) is undefined
+        // behaviour. Anything beyond 2^53 is no real expiry time either.
+        const double exp = o.value(QStringLiteral("expiresAt")).toDouble();
+        if (!(std::fabs(exp) < 9007199254740992.0)) {
+            *error = QStringLiteral("The pairing code's expiry time is not valid.");
+            return std::nullopt;
+        }
+        expiresAt = qint64(exp);
     } else {
         const QUrl u(t);
         static const QStringList schemes{QStringLiteral("kyidentity"), QStringLiteral("kysignon"),

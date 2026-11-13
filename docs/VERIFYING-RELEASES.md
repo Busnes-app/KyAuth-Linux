@@ -16,7 +16,7 @@
 |---|---|---|
 | The Flatpak repository at `https://busnes-app.github.io/KyAuth-Linux/repo/` | **Yes.** Every OSTree commit and the repository summary are GPG-signed in the publish job (`flatpak build-commit-from --gpg-sign`, `flatpak build-update-repo --gpg-sign`) | Flatpak checks the signature on every install and update |
 | `kyauth-<arch>.flatpak` bundles on the GitHub release | **Yes**, with the same key, which the bundle also carries | Flatpak checks it on install, and on updates from the repository |
-| `kyauth.busnes_<version>_arm64.click` on the GitHub release | **No.** Click packages installed from a file are not signed | Only that it came from this repository's release page over HTTPS |
+| `kyauth.busnes_<version>_arm64.click` on the GitHub release | **No.** Click packages installed from a file are not signed | Its build provenance, below |
 
 The signing key is an RSA-4096 GPG key, "KyAuth Flatpak Signing Key
 <kyauth-flatpak@busnes.app>", made by `packaging/flatpak/gen-signing-key.sh`. Only the
@@ -48,12 +48,25 @@ flatpak info app.busnes.kyauth          # the Commit: line names the signed OSTr
 Flatpak refuses an unsigned commit, or one signed by another key, on install and on every
 `flatpak update`. A bundle install does the same, then updates from the repository.
 
+## Check where a release file was built
+
+The publish job also makes one SLSA build-provenance attestation covering the click, both
+bundles and `kyauth.flatpakrepo`. It is signed keylessly through Sigstore with the release
+run's GitHub identity, so there is no key to publish, and attached to the release as
+`kyauth-<tag>.intoto.jsonl`. With the GitHub CLI:
+
+```bash
+gh attestation verify kyauth.busnes_<version>_arm64.click --repo Busnes-app/KyAuth-Linux \
+  --bundle kyauth-<tag>.intoto.jsonl
+```
+
+This proves the file came out of this repository's `release.yml` at that tag. It does not
+prove the source was safe, or that the build is repeatable.
+
 ## What this project cannot offer yet
 
 - **A published key fingerprint.** It should go in the release notes, or in this file,
   once the key exists.
-- **A signature on the click package,** or a checksum for it.
-- **A link from a package to its build.** No build-provenance attestation is made, and
-  Actions logs are kept for 90 days.
+- **A signature on the click package** beyond the build provenance above.
 - **A repeatable build.** Neither the Flatpak nor the click has been checked to rebuild to
   the same bytes, and the CI checks neither.

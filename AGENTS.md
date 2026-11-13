@@ -110,7 +110,12 @@ CredentialProvider) are not ported.
   mixed legacy/strong encrypted-vault reload, refused import/copy, QML error text and
   countdown visibility, and explicit legacy deletion. `KYAUTH_TEST_CAPTURE=<path>`
   optionally captures that test's synthetic account screen for local inspection.
-- CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build.
+- CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build,
+  plus `fuzz`: libFuzzer (clang, ASan+UBSan, `-DKYAUTH_FUZZ=ON`) over `parsePairing` and
+  `parseOtpauth`, the text a QR scan or paste supplies. It replays `fuzz/corpus/scan/` and
+  fuzzes for 60 s; commands are in `fuzz/CMakeLists.txt`. A crash input joins the corpus with
+  a matching `test_protocol`/`test_totp` case. Its checks are the accepted-input invariants
+  in `fuzz/scan_fuzzer.cpp`; change them with the parser.
 - `tls` exercises the real `Controller::request` against weak/strong TLS servers,
   including chain keys, protocol versions, trust/name/expiry, redirects and repeats.
   Refusals must send no HTTP bytes; weak fixtures need successful low-security

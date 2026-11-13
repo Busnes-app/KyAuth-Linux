@@ -145,6 +145,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write # push gh-pages; create the release
+      id-token: write # keyless Sigstore signing of the release provenance
+      attestations: write # store that provenance in the attestations API
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -261,6 +263,28 @@ jobs:
           git push -f "https://x-access-token:$TOKEN@github.com/${{ github.repository }}.git" gh-pages
           du -sh . | awk '{print "Published site: " $1 " (GitHub Pages caps sites at 1 GB)"}'
 
+      # SLSA provenance for every release file in one attestation, signed keylessly with this
+      # run's OIDC identity (no key to keep), and attached to the release as well: the
+      # attestations API alone is invisible to anyone reading the release.
+      - name: Attest release provenance
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            *.click
+            kyauth-*.flatpak
+            _site/kyauth.flatpakrepo
+      - name: Stage and verify the provenance bundle
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cp "$BUNDLE_PATH" "kyauth-$GITHUB_REF_NAME.intoto.jsonl"
+          for f in *.click kyauth-*.flatpak _site/kyauth.flatpakrepo; do
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --bundle "kyauth-$GITHUB_REF_NAME.intoto.jsonl"
+          done
+
       - name: Attach installables to the release
         # Pinned to a commit: a repointed tag would run with this job's write token.
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
@@ -269,5 +293,6 @@ jobs:
             *.click
             kyauth-*.flatpak
             _site/kyauth.flatpakrepo
+            kyauth-*.intoto.jsonl
           fail_on_unmatched_files: true
           generate_release_notes: true
