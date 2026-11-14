@@ -1,3 +1,15 @@
 build/
 build-*/
 .clickable/
+
+# Release outputs that .github/workflows/release.yml writes into the checkout root
+# (flatpak-builder's state and OSTree repos, the bundles, the downloaded click, the Pages site).
+/.flatpak-builder/
+/repo-x86_64/
+/repo-aarch64/
+/repo-x86_64.tar
+/repo-aarch64.tar
+/kyauth-x86_64.flatpak
+/kyauth-aarch64.flatpak
+/kyauth.busnes_*_arm64.click
+/_site/
