@@ -23,7 +23,9 @@ A `linux` device may use only `unifiedpush` or `ubuntupush`. `fcm` is refused.
 
 ### Pairing proof v1 (QR pairing)
 
-QR pairing never sends `pairingToken`. With `K = SHA-256(pairingToken)` and `origin` the
+QR pairing never sends `pairingToken`. With
+`K = HMAC-SHA256(key = pairingToken, "kyidentity-pair-key/1")` (not SHA-256(token), which
+KyIdentity stores as `token_hash`) and `origin` the
 canonical origin of `serverUrl` (`originOf`):
 
 - Body: the fields above plus `userId`, without `pairingToken` and `pinCode`.

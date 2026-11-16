@@ -23,7 +23,8 @@ CredentialProvider) are not ported.
   KyIdentity `feat/linux-authenticator`.
 - Registration sends `platform: "linux"` and no attestation; the device is graded `none`.
 - QR pairing uses KyAuth pairing proof v1 (`docs/push-contract.md`): the body carries `userId`
-  and never `pairingToken`/`pinCode`; `KyIdentity-Pairing-Proof` is an HMAC with SHA-256(token)
+  and never `pairingToken`/`pinCode`; `KyIdentity-Pairing-Proof` is an HMAC keyed by
+  HMAC-SHA256(token, "kyidentity-pair-key/1") (never SHA-256(token), the server's stored hash)
   over the exact body bytes, and a 2xx reply is saved only after its header verifies over the
   exact reply bytes (`pairingReplyVerified`). Requires a KyIdentity release with pairing proof;
   older servers refuse the pairing. PIN pairing is unchanged.

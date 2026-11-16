@@ -1,5 +1,6 @@
 #include "protocol.h"
 
+#include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QtTest>
 
@@ -148,14 +149,17 @@ private slots:
     // KyAuth pairing proof v1 golden vector, shared with KyIdentity.
     void pairingProofVector()
     {
-        const QByteArray key = pairingKey(QStringLiteral("00112233445566778899aabbccddeeff0011223344556677"));
-        QCOMPARE(key.toHex(), QByteArrayLiteral("6b374db4159ffa3ad74bcc886b8d70a0c421952f0dddb887820093e27044d8d4"));
+        const QString token = QStringLiteral("00112233445566778899aabbccddeeff0011223344556677");
+        const QByteArray key = pairingKey(token);
+        QCOMPARE(key.toHex(), QByteArrayLiteral("8f7bb6e4f056bb6d1846aa7544964867c93afdd56ec29c73c46aac8ebd8f8d76"));
+        // Not the server's stored token_hash: a database reader must not be able to pair.
+        QVERIFY(key != QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256));
         const QString origin = QStringLiteral("https://id.example.com");
         const QByteArray request = "{\"userId\":\"user-1\",\"deviceName\":\"Pixel\",\"deviceIdentifier\":\"inst-1\","
                                    "\"platform\":\"android\",\"publicKey\":\"BAAA\",\"pushToken\":\"tok\",\"pushTransport\":\"fcm\"}";
-        QCOMPARE(pairingProof(key, origin, request), QByteArrayLiteral("NbMaNQG2rujfajtoYLf01p2YnmfAW3EFm3_26roCDUc"));
+        QCOMPARE(pairingProof(key, origin, request), QByteArrayLiteral("mJoloQsGw4y-mlo2Lo3pMsesJrVna3FPQN4DuV5HaTs"));
         const QByteArray response = "{\"success\":true,\"deviceId\":\"dev-1\",\"device\":{\"id\":\"dev-1\"}}\n";
-        const QByteArray reply = "zANXKOlyO1yxqAb2W4QqpkPWmL37PaXBKqaPjOlrJgY";
+        const QByteArray reply = "QsV0h3Srdjg805wx19o-D3Ee1KhzmKAz1RqP4Zu0Q-Y";
         QCOMPARE(pairingReplyProof(key, origin, request, response), reply);
         QVERIFY(pairingReplyVerified(key, origin, request, response, reply));
         QVERIFY(!pairingReplyVerified(key, origin, request, response.chopped(1), reply)); // exact bytes

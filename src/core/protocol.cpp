@@ -168,7 +168,7 @@ QJsonObject registrationBody(const PairingRequest &req, const QString &deviceNam
 
 QByteArray pairingKey(const QString &pairingToken)
 {
-    return QCryptographicHash::hash(pairingToken.toUtf8(), QCryptographicHash::Sha256);
+    return QMessageAuthenticationCode::hash("kyidentity-pair-key/1", pairingToken.toUtf8(), QCryptographicHash::Sha256);
 }
 
 QByteArray pairingProof(const QByteArray &key, const QString &origin, const QByteArray &body)

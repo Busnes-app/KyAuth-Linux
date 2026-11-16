@@ -56,7 +56,8 @@ QJsonObject registrationBody(const PairingRequest &req, const QString &deviceNam
 std::optional<std::pair<QString, QString>> parseRegistration(int status, const QByteArray &body,
                                                              const QString &fallbackUserId, QString *error);
 
-// KyAuth pairing proof v1, QR pairing only. The key is SHA-256 of the QR pairing token.
+// KyAuth pairing proof v1, QR pairing only. The key is HMAC-SHA256(token, "kyidentity-pair-key/1"),
+// never SHA-256(token): that is the server's stored token_hash.
 inline constexpr char kPairingProofHeader[] = "KyIdentity-Pairing-Proof";
 QByteArray pairingKey(const QString &pairingToken);
 // base64url-no-pad HMAC-SHA256 over the exact request body bytes.
