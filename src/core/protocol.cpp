@@ -1,13 +1,16 @@
 #include "protocol.h"
+#include "crypto.h"
 
 #include <QCryptographicHash>
 #include <QJsonDocument>
+#include <QMessageAuthenticationCode>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QUrl>
 #include <QUrlQuery>
 
 #include <cmath>
+#include <openssl/crypto.h>
 
 namespace ky {
 namespace {
@@ -134,7 +137,7 @@ std::optional<PairingRequest> parsePairing(const QString &text, qint64 nowSecond
         }
         r.registrationUrl = reg.toString(QUrl::FullyEncoded);
     }
-    if (r.pairingToken.isEmpty() && (r.pinCode.isEmpty() || r.userId.isEmpty())) {
+    if (r.userId.isEmpty() || (r.pairingToken.isEmpty() && r.pinCode.isEmpty())) {
         *error = QStringLiteral("The pairing code is incomplete.");
         return std::nullopt;
     }
@@ -157,13 +160,37 @@ QJsonObject registrationBody(const PairingRequest &req, const QString &deviceNam
                   {QStringLiteral("pushTransport"), push.transport},
                   {QStringLiteral("pushP256dh"), push.p256dh},
                   {QStringLiteral("pushAuth"), push.auth}};
-    if (!req.pairingToken.isEmpty())
-        o.insert(QStringLiteral("pairingToken"), req.pairingToken);
-    if (!req.pinCode.isEmpty())
+    if (req.pairingToken.isEmpty())
         o.insert(QStringLiteral("pinCode"), req.pinCode);
-    if (!req.userId.isEmpty())
-        o.insert(QStringLiteral("userId"), req.userId);
+    o.insert(QStringLiteral("userId"), req.userId);
     return o;
+}
+
+QByteArray pairingKey(const QString &pairingToken)
+{
+    return QCryptographicHash::hash(pairingToken.toUtf8(), QCryptographicHash::Sha256);
+}
+
+QByteArray pairingProof(const QByteArray &key, const QString &origin, const QByteArray &body)
+{
+    return b64url(QMessageAuthenticationCode::hash("kyidentity-pair/1\n" + origin.toUtf8() + '\n' + body, key,
+                                                   QCryptographicHash::Sha256));
+}
+
+QByteArray pairingReplyProof(const QByteArray &key, const QString &origin, const QByteArray &requestBody,
+                             const QByteArray &responseBody)
+{
+    const QByteArray reqHash = b64url(QCryptographicHash::hash(requestBody, QCryptographicHash::Sha256));
+    return b64url(QMessageAuthenticationCode::hash("kyidentity-pair-reply/1\n" + origin.toUtf8() + '\n' + reqHash
+                                                       + '\n' + responseBody,
+                                                   key, QCryptographicHash::Sha256));
+}
+
+bool pairingReplyVerified(const QByteArray &key, const QString &origin, const QByteArray &requestBody,
+                          const QByteArray &responseBody, const QByteArray &header)
+{
+    const QByteArray want = pairingReplyProof(key, origin, requestBody, responseBody);
+    return header.size() == want.size() && CRYPTO_memcmp(header.constData(), want.constData(), size_t(want.size())) == 0;
 }
 
 std::optional<std::pair<QString, QString>> parseRegistration(int status, const QByteArray &body,
