@@ -27,7 +27,7 @@ sign-ins. Its security requirements:
 
 | Attacker | Can | Wants |
 |---|---|---|
-| Network attacker | Read and alter traffic | Steal tokens, forge answers, pair with a fake server |
+| Network attacker | Read and alter traffic; possibly hold a certificate this machine trusts for the KyIdentity host | Steal tokens, forge answers, pair with a fake server |
 | Push service, distributor, Ubuntu Push | See and replay push traffic | Learn who signs in where, inject a request |
 | Malicious QR code or pairing link | Put any server and registration URL in front of the user | Send the pairing or answers elsewhere |
 | Another process on the D-Bus session bus | Call KyAuth's UnifiedPush connector | Inject or unregister pushes |
@@ -57,6 +57,20 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
    stricter levels. An unavailable backend refuses requests with a readable error
    while local codes remain usable. A pairing's registration URL must have
    the same origin as its server (`parsePairing`, `src/core/protocol.cpp`).
+
+   **No certificate pin, by decision.** The attacker it would stop holds a certificate this
+   machine trusts for the KyIdentity host (mis-issued, or obtained by hijacking DNS or domain
+   validation) and sits on its path. What that attacker gets, request by request:
+
+   | Request | Device-signed | Attacker gains |
+   |---|---|---|
+   | Pairing (`register`) | No: it enrols the key | Its own key enrolled, or the token spent; forged `deviceId`/`userId`. Trust on first use |
+   | MFA answer (`/api/mfa/push/respond`) | Yes: origin, user, device, challenge, purpose, expiry, decision, digits | Block or delay an answer, show a false result. Never an approval |
+   | Push-token update (`push-token`) | Yes: origin, device, time, transport, token hash, keys | Stop pushes. The push endpoint and RFC 8291 keys it carries |
+
+   With the push endpoint and keys, a forged sealed request can be delivered: it can show attacker
+   text but cannot change what is signed, so an approval still needs a real challenge, its purpose
+   and expiry.
 2. **Push transport → phone.** The body is RFC 8291 `aes128gcm`, decrypted with this
    pairing's keys (`webPushDecrypt`, `src/core/crypto.cpp`). A body that does not decrypt is
    dropped (`Controller::handlePushBody`).
@@ -118,6 +132,9 @@ affected by SHA-1's collision weakness.
   A 6-digit PIN falls in about 6 hours on a 20-core desktop (README). Use a passphrase.
 - **The device is graded `none`.** There is no hardware attestation, so it cannot be used for
   MFA-grade device sign-on.
+- **Pairing is trust on first use.** An attacker with a certificate this machine trusts for the
+  KyIdentity host, present during pairing, can enrol its own key; nothing checks the key out of
+  band. A pin would not help, since nothing is pinned yet at that moment.
 - **The click package is unsigned** (it carries only build provenance), and no release is published yet
   ([VERIFYING-RELEASES.md](VERIFYING-RELEASES.md)).
 - Dynamic memory-error checking covers only the scanned/pasted-code parsers: CI fuzzes

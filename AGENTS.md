@@ -30,6 +30,11 @@ CredentialProvider) are not ported.
   fallback or on-demand roots, force HTTP/1.1/full handshakes and check peer chains
   in the pre-data `encrypted` signal. Pool only checked connections in `m_net`.
   Keep CA/name/time validation and manual redirects.
+- KyAuth does not pin KyIdentity's certificate (owner, 2026-11-16, after a request-by-request
+  audit; `docs/ASSURANCE-CASE.md`, Trust boundaries 1). MFA answers and push-token updates are
+  device-signed and bound, so they hold without one. A new request that changes server state must
+  carry a device-key signature over a domain-separated message binding origin and device; a reply
+  field must never grant anything on its own. Pairing stays trust on first use (Residual risk).
   Refuse unavailable backends with an error while retaining offline TOTP. See
   `SECURITY.md` for profile precedence and external-push scope.
 - `src/core` depends on QtCore and OpenSSL only and holds every protocol and crypto rule;
