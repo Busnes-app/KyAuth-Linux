@@ -13,3 +13,6 @@ build-*/
 /kyauth-aarch64.flatpak
 /kyauth.busnes_*_arm64.click
 /_site/
+
+# Generated mdBook manual
+/docs/book/
