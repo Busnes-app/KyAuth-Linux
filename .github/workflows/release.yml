@@ -13,6 +13,7 @@ on:
   push:
     tags: ["v*"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 # Publishing runs must never race the gh-pages force-push, nor be cancelled halfway.
@@ -31,8 +32,9 @@ env:
 jobs:
   version:
     name: Version matches tag
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: (startsWith(github.ref, 'refs/tags/v')) && github.event.pull_request.draft != true
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,8 +44,9 @@ jobs:
 
   click:
     name: Ubuntu Touch click (arm64)
-    if: github.event_name != 'pull_request' # ci.yml builds it on pull requests
+    if: (github.event_name != 'pull_request') && github.event.pull_request.draft != true # ci.yml builds it on pull requests
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,6 +66,7 @@ jobs:
 
   flatpak:
     name: Flatpak (${{ matrix.arch }})
+    if: github.event.pull_request.draft != true
     strategy:
       fail-fast: false
       matrix:
@@ -72,6 +76,7 @@ jobs:
           - arch: aarch64
             runs_on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -143,6 +148,7 @@ jobs:
     needs: [version, click, flatpak]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: write # push gh-pages; create the release
       id-token: write # keyless Sigstore signing of the release provenance
