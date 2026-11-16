@@ -47,12 +47,26 @@ QString originOf(const QString &url);
 // QR text (JSON or kyidentity://native-pair link) to a request. Sets `error` on failure.
 std::optional<PairingRequest> parsePairing(const QString &text, qint64 nowSeconds, QString *error);
 
+// QR pairing sends `userId` and proves the token in a header; PIN pairing sends `pinCode`.
+// `pairingToken` is never sent.
 QJsonObject registrationBody(const PairingRequest &req, const QString &deviceName,
                              const QString &deviceIdentifier, const QByteArray &spki,
                              const PushCredential &push);
 // Returns deviceId and userId on success, else sets `error`.
 std::optional<std::pair<QString, QString>> parseRegistration(int status, const QByteArray &body,
                                                              const QString &fallbackUserId, QString *error);
+
+// KyAuth pairing proof v1, QR pairing only. The key is HMAC-SHA256(token, "kyidentity-pair-key/1"),
+// never SHA-256(token): that is the server's stored token_hash.
+inline constexpr char kPairingProofHeader[] = "KyIdentity-Pairing-Proof";
+QByteArray pairingKey(const QString &pairingToken);
+// base64url-no-pad HMAC-SHA256 over the exact request body bytes.
+QByteArray pairingProof(const QByteArray &key, const QString &origin, const QByteArray &body);
+QByteArray pairingReplyProof(const QByteArray &key, const QString &origin, const QByteArray &requestBody,
+                             const QByteArray &responseBody);
+// Constant-time check of the reply header over the exact response bytes.
+bool pairingReplyVerified(const QByteArray &key, const QString &origin, const QByteArray &requestBody,
+                          const QByteArray &responseBody, const QByteArray &header);
 
 // Flat all-string JSON from a decrypted push, bound to this pairing.
 std::optional<Challenge> parseChallenge(const QByteArray &json, const QString &deviceId,

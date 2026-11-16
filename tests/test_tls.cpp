@@ -21,6 +21,7 @@ class NetworkController : public Controller {
 public:
     using Controller::Controller;
     using Controller::request;
+    using Controller::requestJson;
 };
 
 class TlsServer : public QTcpServer {
@@ -333,7 +334,7 @@ private slots:
         for (int attempt = 0; attempt < 2; ++attempt) {
             server.received.clear();
             int status = -1;
-            controller.request(QByteArrayLiteral("POST"), url, body,
+            controller.requestJson(QByteArrayLiteral("POST"), url, body,
                                [&status](int value, const QByteArray &) { status = value; });
             QTRY_VERIFY_WITH_TIMEOUT(status != -1, 12000);
             if (accepted) {
@@ -367,7 +368,7 @@ private slots:
                 + scheme.toLatin1() + QByteArrayLiteral("://localhost:") + QByteArray::number(destination.serverPort())
                 + QByteArrayLiteral("/stolen\r\n\r\n");
             int status = -1;
-            controller.request(QByteArrayLiteral("POST"),
+            controller.requestJson(QByteArrayLiteral("POST"),
                 QStringLiteral("https://localhost:%1/start").arg(redirect.serverPort()), {},
                 [&status](int value, const QByteArray &) { status = value; });
             QTRY_COMPARE_WITH_TIMEOUT(status, 307, 12000);
@@ -376,7 +377,7 @@ private slots:
             redirect.received.clear();
         }
         int status = -1;
-        controller.request(QByteArrayLiteral("POST"),
+        controller.requestJson(QByteArrayLiteral("POST"),
             QStringLiteral("https://127.0.0.1:%1/wrong-name").arg(destination.serverPort()), {},
             [&status](int value, const QByteArray &) { status = value; });
         QTRY_VERIFY_WITH_TIMEOUT(status != -1, 12000);
@@ -384,7 +385,7 @@ private slots:
         QVERIFY(destination.received.isEmpty());
         const int connectionsBeforePlaintext = destination.connections;
         status = -1;
-        controller.request(QByteArrayLiteral("POST"),
+        controller.requestJson(QByteArrayLiteral("POST"),
             QStringLiteral("http://localhost:%1/plaintext").arg(destination.serverPort()), {},
             [&status](int value, const QByteArray &) { status = value; });
         QCOMPARE(status, 0);
@@ -406,11 +407,40 @@ private slots:
         NetworkController controller(files.path(), ky::ScryptParams{1024, 8, 1});
         int status = -1;
         QByteArray body;
-        controller.request(QByteArrayLiteral("POST"), QStringLiteral("https://localhost:%1/big").arg(server.serverPort()), {},
+        controller.requestJson(QByteArrayLiteral("POST"), QStringLiteral("https://localhost:%1/big").arg(server.serverPort()), {},
                            [&status, &body](int value, const QByteArray &reply) { status = value; body = reply; });
         QTRY_VERIFY_WITH_TIMEOUT(status != -1, 12000);
         QCOMPARE(status, 0);
         QVERIFY(body.isEmpty());
+    }
+
+    // The pairing proof goes out as a header over the exact body bytes, and the reply's comes back.
+    void pairingProofHeaderRoundTrip()
+    {
+        QSslConfiguration defaults = original;
+        defaults.setCaCertificates(QSslCertificate::fromPath(path(QStringLiteral("root.crt"))));
+        QSslConfiguration::setDefaultConfiguration(defaults);
+        TlsServer server;
+        server.tls = serverConfig(QStringLiteral("rsa2048"), QSsl::TlsV1_2);
+        server.response = QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n"
+                                            "kyidentity-pairing-proof: reply-proof\r\n\r\n{}");
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        NetworkController controller(files.path(), ky::ScryptParams{1024, 8, 1});
+        int status = -1;
+        QByteArray reply, replyProof;
+        controller.request(QByteArrayLiteral("POST"), QStringLiteral("https://localhost:%1/register").arg(server.serverPort()),
+                           QByteArrayLiteral("{\"userId\":\"u1\"}"), QByteArrayLiteral("request-proof"),
+                           [&](int value, const QByteArray &body, const QByteArray &proof) {
+                               status = value;
+                               reply = body;
+                               replyProof = proof;
+                           });
+        QTRY_VERIFY_WITH_TIMEOUT(status != -1, 12000);
+        QCOMPARE(status, 200);
+        QCOMPARE(reply, QByteArrayLiteral("{}"));
+        QCOMPARE(replyProof, QByteArrayLiteral("reply-proof"));
+        QVERIFY(server.received.toLower().contains("\r\nkyidentity-pairing-proof: request-proof\r\n"));
+        QVERIFY(server.received.endsWith("\r\n\r\n{\"userId\":\"u1\"}"));
     }
 
     void queuedAndReentrantRefusals()
@@ -430,11 +460,11 @@ private slots:
         done = [&](int status, const QByteArray &) {
             allRefused = allRefused && status == 0;
             if (++completed == 1)
-                controller.request(QByteArrayLiteral("POST"), url,
+                controller.requestJson(QByteArrayLiteral("POST"), url,
                                    {{QStringLiteral("credential"), QStringLiteral("reentrant-only")}}, done);
         };
         for (int i = 0; i < 2; ++i)
-            controller.request(QByteArrayLiteral("POST"), url,
+            controller.requestJson(QByteArrayLiteral("POST"), url,
                                {{QStringLiteral("credential"), QStringLiteral("queued-only")}}, done);
         QTRY_COMPARE_WITH_TIMEOUT(completed, 3, 15000);
         QVERIFY(allRefused);
@@ -470,7 +500,7 @@ private slots:
             server.negotiatedProtocol.clear();
             NetworkController controller(files.path(), ky::ScryptParams{1024, 8, 1});
             int status = -1;
-            controller.request(QByteArrayLiteral("POST"),
+            controller.requestJson(QByteArrayLiteral("POST"),
                 QStringLiteral("https://localhost:%1/credential").arg(server.serverPort()),
                 {{QStringLiteral("credential"), QStringLiteral("synthetic-alpn-only")}},
                 [&status](int value, const QByteArray &) { status = value; });
@@ -525,7 +555,7 @@ private slots:
         QVERIFY(server.listen(QHostAddress::LocalHost));
         NetworkController controller(files.path(), ky::ScryptParams{1024, 8, 1});
         int status = -1;
-        controller.request(QByteArrayLiteral("POST"),
+        controller.requestJson(QByteArrayLiteral("POST"),
             QStringLiteral("https://localhost:%1/credential").arg(server.serverPort()),
             {{QStringLiteral("credential"), QStringLiteral("synthetic-only")}},
             [&status](int value, const QByteArray &) { status = value; });
@@ -567,7 +597,7 @@ int main(int argc, char **argv)
         NetworkController controller(directory.path(), ky::ScryptParams{1024, 8, 1});
         int status = -1;
         QString callerError;
-        controller.request(QByteArrayLiteral("POST"), QStringLiteral("https://localhost:9/credential"), {},
+        controller.requestJson(QByteArrayLiteral("POST"), QStringLiteral("https://localhost:9/credential"), {},
                            [&status, &callerError](int value, const QByteArray &body) {
             status = value;
             callerError = ky::serverError(value, body);

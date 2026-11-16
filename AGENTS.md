@@ -22,6 +22,12 @@ CredentialProvider) are not ported.
   carry the same RFC 8291 `aes128gcm` payload; no plaintext push path exists. The server side is
   KyIdentity `feat/linux-authenticator`.
 - Registration sends `platform: "linux"` and no attestation; the device is graded `none`.
+- QR pairing uses KyAuth pairing proof v1 (`docs/push-contract.md`): the body carries `userId`
+  and never `pairingToken`/`pinCode`; `KyIdentity-Pairing-Proof` is an HMAC keyed by
+  HMAC-SHA256(token, "kyidentity-pair-key/1") (never SHA-256(token), the server's stored hash)
+  over the exact body bytes, and a 2xx reply is saved only after its header verifies over the
+  exact reply bytes (`pairingReplyVerified`). Requires a KyIdentity release with pairing proof;
+  older servers refuse the pairing. PIN pairing is unchanged.
 - Qt 5.15 is the floor (UT's only stable Qt). Code must build unchanged on Qt 6. OpenSSL >= 3.0.
 - `Controller::request` owns application TLS policy before dispatch: actual QtNetwork
   OpenSSL >=3 backend, TLS >=1.2, peer verification and fixed
@@ -34,7 +40,7 @@ CredentialProvider) are not ported.
   audit; `docs/ASSURANCE-CASE.md`, Trust boundaries 1). MFA answers and push-token updates are
   device-signed and bound, so they hold without one. A new request that changes server state must
   carry a device-key signature over a domain-separated message binding origin and device; a reply
-  field must never grant anything on its own. Pairing stays trust on first use (Residual risk).
+  field must never grant anything on its own. PIN pairing stays trust on first use (Residual risk).
   Refuse unavailable backends with an error while retaining offline TOTP. See
   `SECURITY.md` for profile precedence and external-push scope.
 - `src/core` depends on QtCore and OpenSSL only and holds every protocol and crypto rule;
@@ -106,7 +112,7 @@ CredentialProvider) are not ported.
 
 - `ctest`: core vectors (RFC 8291, RFC 7914, RFC 6238, KyAuth-Android golden strings);
   `controller`, which drives `Controller` through a `request()` override (no network) for the
-  lock, save-failure, push-requeue and refresh rules, plus the real QML for request binding and
+  lock, save-failure, push-requeue, refresh and pairing-proof rules, plus the real QML for request binding and
   the appearance page; `theme`, the ky-ui status colour gate (180 checks) and saved-choice
   migration; and `qml_smoke`, which drives the real QML through setup, add account, every
   page, every theme half and lock and fails on any
@@ -122,7 +128,8 @@ CredentialProvider) are not ported.
   a matching `test_protocol`/`test_totp` case. Its checks are the accepted-input invariants
   in `fuzz/scan_fuzzer.cpp`; change them with the parser.
 - `tls` exercises the real `Controller::request` against weak/strong TLS servers,
-  including chain keys, protocol versions, trust/name/expiry, redirects and repeats.
+  including chain keys, protocol versions, trust/name/expiry, redirects, repeats and the
+  pairing-proof header round trip.
   Refusals must send no HTTP bytes; weak fixtures need successful low-security
   controls. It uses the OpenSSL CLI for throwaway certificates, not live secrets.
 - `unifiedpush` drives the real connector over an owned `dbus-run-session`, with

@@ -106,9 +106,13 @@ private:
     void notifyDesktop();
 
 protected:
-    // HTTPS JSON request; status 0 means no response. Virtual so tests can answer it.
-    virtual void request(const QByteArray &verb, const QString &url, const QJsonObject &body,
-                         std::function<void(int, const QByteArray &)> done);
+    using Done = std::function<void(int status, const QByteArray &body, const QByteArray &pairingProof)>;
+    // HTTPS JSON request; status 0 means no response. A non-empty `pairingProof` is sent as
+    // kPairingProofHeader, and the reply's header is handed back. Virtual so tests can answer it.
+    virtual void request(const QByteArray &verb, const QString &url, const QByteArray &body,
+                         const QByteArray &pairingProof, Done done);
+    void requestJson(const QByteArray &verb, const QString &url, const QJsonObject &body,
+                     std::function<void(int, const QByteArray &)> done);
 
 private:
     friend class TestController;

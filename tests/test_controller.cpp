@@ -25,16 +25,22 @@ public:
     struct Request {
         QByteArray verb;
         QString url;
+        QByteArray raw;
         QJsonObject body;
-        std::function<void(int, const QByteArray &)> done;
+        QByteArray proof;
+        Done reply;
+        void done(int status, const QByteArray &body, const QByteArray &replyProof = {}) const
+        {
+            reply(status, body, replyProof);
+        }
     };
     QList<Request> requests;
 
 protected:
-    void request(const QByteArray &verb, const QString &url, const QJsonObject &body,
-                 std::function<void(int, const QByteArray &)> done) override
+    void request(const QByteArray &verb, const QString &url, const QByteArray &body, const QByteArray &pairingProof,
+                 Done done) override
     {
-        requests.append({verb, url, body, std::move(done)});
+        requests.append({verb, url, body, QJsonDocument::fromJson(body).object(), pairingProof, std::move(done)});
     }
 };
 
@@ -535,6 +541,71 @@ private slots:
         QCOMPARE(a.value(QStringLiteral("code")).toString().size(), 7); // "123 456"
         QVERIFY(c.addAccount(QStringLiteral("otpauth://totp/Strong?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")));
         QVERIFY(!c.accounts().last().toMap().value(QStringLiteral("shortKey")).toBool());
+    }
+
+    // QR pairing proves the token without sending it and saves only a reply that proves it back.
+    void qrPairingProof_data()
+    {
+        QTest::addColumn<QString>("reply"); // "valid", "tampered" or "missing"
+        QTest::newRow("valid") << QStringLiteral("valid");
+        QTest::newRow("tampered") << QStringLiteral("tampered");
+        QTest::newRow("missing") << QStringLiteral("missing");
+    }
+    void qrPairingProof()
+    {
+        QFETCH(QString, reply);
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        c.m_latestToken = QStringLiteral("https://push.example.net/up1");
+        const QString token = QStringLiteral("00112233445566778899aabbccddeeff0011223344556677");
+        c.pair(QStringLiteral("{\"type\":\"kyidentity_device_pairing\",\"serverUrl\":\"https://ID.example.com/\","
+                              "\"pairingToken\":\"%1\",\"userId\":\"u1\",\"username\":\"alice\"}").arg(token));
+        QCOMPARE(c.requests.size(), 1);
+        const FakeController::Request r = c.requests.at(0);
+        QVERIFY(!r.raw.contains(token.toLatin1()));
+        QVERIFY(!r.body.contains(QStringLiteral("pairingToken")));
+        QVERIFY(!r.body.contains(QStringLiteral("pinCode")));
+        QCOMPARE(r.body.value(QStringLiteral("userId")).toString(), QStringLiteral("u1"));
+        const QByteArray key = pairingKey(token);
+        QCOMPARE(r.proof, pairingProof(key, server, r.raw));
+
+        const QByteArray body = "{\"success\":true,\"deviceId\":\"d1\",\"device\":{\"userId\":\"u1\"}}\n";
+        const QByteArray proof = pairingReplyProof(key, server, r.raw, body);
+        if (reply == QLatin1String("valid")) {
+            r.done(200, body, proof);
+            QCOMPARE(c.pairing().value(QStringLiteral("username")).toString(), QStringLiteral("alice"));
+            QCOMPARE(c.noticeKind(), QStringLiteral("success"));
+            return;
+        }
+        if (reply == QLatin1String("tampered"))
+            r.done(200, QByteArray(body).replace("\"d1\"", "\"d6\""), proof);
+        else
+            r.done(200, body);
+        QVERIFY(c.pairing().isEmpty());
+        QCOMPARE(c.notice(), QStringLiteral("The server's pairing reply could not be verified."));
+        c.lock();
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+        QVERIFY(c.pairing().isEmpty()); // nothing reached the vault file either
+    }
+
+    // PIN pairing is unchanged: the PIN in the body, no proof either way.
+    void pinPairingUnchanged()
+    {
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        setUp(c);
+        c.m_latestToken = QStringLiteral("https://push.example.net/up1");
+        c.pair(QStringLiteral("kyidentity://native-pair?srv=https%3A%2F%2Fid.example.com&pin=123456&uid=u1&user=alice"));
+        QCOMPARE(c.requests.size(), 1);
+        const FakeController::Request r = c.requests.at(0);
+        QVERIFY(r.proof.isEmpty());
+        QCOMPARE(r.body.value(QStringLiteral("pinCode")).toString(), QStringLiteral("123456"));
+        QCOMPARE(r.body.value(QStringLiteral("userId")).toString(), QStringLiteral("u1"));
+        QVERIFY(!r.body.contains(QStringLiteral("pairingToken")));
+        r.done(200, "{\"success\":true,\"deviceId\":\"d1\"}");
+        QCOMPARE(c.pairing().value(QStringLiteral("username")).toString(), QStringLiteral("alice"));
     }
 
     // Answered just before a lock: the requeued push must not come back after unlocking.

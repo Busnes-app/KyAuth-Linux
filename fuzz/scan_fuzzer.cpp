@@ -29,7 +29,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     QString error;
     if (const auto pairing = ky::parsePairing(text, now, &error)) {
-        // The app sends the pairing token to registrationUrl: it must be https on
+        // The app sends the pairing request to registrationUrl: it must be https on
         // the server's own origin, whatever the code said.
         check(pairing->serverUrl.startsWith(QLatin1String("https://")));
         const QString origin = ky::originOf(pairing->serverUrl);

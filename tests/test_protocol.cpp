@@ -1,5 +1,6 @@
 #include "protocol.h"
 
+#include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QtTest>
 
@@ -132,6 +133,7 @@ private slots:
         QVERIFY(!parsePairing(qr("http://signin.example.com", "x"), 1000, &err));
         QVERIFY(!parsePairing(qr("https://u:p@a.example", "x"), 1000, &err));
         QVERIFY(!parsePairing(qr("https://a.example", ""), 1000, &err)); // PIN without userId
+        QVERIFY(!parsePairing(qr("https://a.example", "x"), 1000, &err)); // token without userId: the proof body needs it
         QVERIFY(!parsePairing(qr("https://a.example", "x", 0, "", "other"), 1000, &err));
 
         // Found by fuzz/scan_fuzzer under UBSan: a double this large does not fit qint64.
@@ -142,6 +144,47 @@ private slots:
                                                  "\"expiresAt\":%1}").arg(QLatin1String(exp)), 1000, &err));
             QCOMPARE(err, QStringLiteral("The pairing code's expiry time is not valid."));
         }
+    }
+
+    // KyAuth pairing proof v1 golden vector, shared with KyIdentity.
+    void pairingProofVector()
+    {
+        const QString token = QStringLiteral("00112233445566778899aabbccddeeff0011223344556677");
+        const QByteArray key = pairingKey(token);
+        QCOMPARE(key.toHex(), QByteArrayLiteral("8f7bb6e4f056bb6d1846aa7544964867c93afdd56ec29c73c46aac8ebd8f8d76"));
+        // Not the server's stored token_hash: a database reader must not be able to pair.
+        QVERIFY(key != QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256));
+        const QString origin = QStringLiteral("https://id.example.com");
+        const QByteArray request = "{\"userId\":\"user-1\",\"deviceName\":\"Pixel\",\"deviceIdentifier\":\"inst-1\","
+                                   "\"platform\":\"android\",\"publicKey\":\"BAAA\",\"pushToken\":\"tok\",\"pushTransport\":\"fcm\"}";
+        QCOMPARE(pairingProof(key, origin, request), QByteArrayLiteral("mJoloQsGw4y-mlo2Lo3pMsesJrVna3FPQN4DuV5HaTs"));
+        const QByteArray response = "{\"success\":true,\"deviceId\":\"dev-1\",\"device\":{\"id\":\"dev-1\"}}\n";
+        const QByteArray reply = "QsV0h3Srdjg805wx19o-D3Ee1KhzmKAz1RqP4Zu0Q-Y";
+        QCOMPARE(pairingReplyProof(key, origin, request, response), reply);
+        QVERIFY(pairingReplyVerified(key, origin, request, response, reply));
+        QVERIFY(!pairingReplyVerified(key, origin, request, response.chopped(1), reply)); // exact bytes
+        QVERIFY(!pairingReplyVerified(key, origin, request + ' ', response, reply));       // bound to the request
+        QVERIFY(!pairingReplyVerified(key, QStringLiteral("https://id.example.org"), request, response, reply));
+        QVERIFY(!pairingReplyVerified(key, origin, request, response, {}));
+        QVERIFY(!pairingReplyVerified(key, origin, request, response, reply.chopped(1)));
+    }
+
+    void registrationBodies()
+    {
+        const PushCredential push{QStringLiteral("unifiedpush"), QStringLiteral("https://push.example/1"),
+                                  QStringLiteral("p"), QStringLiteral("a")};
+        PairingRequest qrPair;
+        qrPair.pairingToken = QStringLiteral("t");
+        qrPair.pinCode = QStringLiteral("123456");
+        qrPair.userId = QStringLiteral("u1");
+        const QJsonObject q = registrationBody(qrPair, QStringLiteral("n"), QStringLiteral("i"), "k", push);
+        QVERIFY(!q.contains(QStringLiteral("pairingToken")));
+        QVERIFY(!q.contains(QStringLiteral("pinCode")));
+        QCOMPARE(q.value(QStringLiteral("userId")).toString(), QStringLiteral("u1"));
+        qrPair.pairingToken.clear();
+        const QJsonObject p = registrationBody(qrPair, QStringLiteral("n"), QStringLiteral("i"), "k", push);
+        QCOMPARE(p.value(QStringLiteral("pinCode")).toString(), QStringLiteral("123456"));
+        QCOMPARE(p.value(QStringLiteral("userId")).toString(), QStringLiteral("u1"));
     }
 
     void registration()

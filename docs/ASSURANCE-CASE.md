@@ -64,7 +64,8 @@ only by scrypt and the passcode's strength. The README says so and asks for a pa
 
    | Request | Device-signed | Attacker gains |
    |---|---|---|
-   | Pairing (`register`) | No: it enrols the key | Its own key enrolled, or the token spent; forged `deviceId`/`userId`. Trust on first use |
+   | QR pairing (`register`) | No, but HMAC-bound to the QR token both ways: the token never crosses the wire, the request proof covers origin and exact body, the reply proof covers origin, request hash and exact reply (`pairingProof`, `pairingReplyVerified`, `src/core/protocol.cpp`) | Block pairing. Nothing saved from an unproven reply |
+   | PIN pairing (`register`) | No: it enrols the key | Its own key enrolled, or the PIN spent; forged `deviceId`/`userId`. Trust on first use |
    | MFA answer (`/api/mfa/push/respond`) | Yes: origin, user, device, challenge, purpose, expiry, decision, digits | Block or delay an answer, show a false result. Never an approval |
    | Push-token update (`push-token`) | Yes: origin, device, time, transport, token hash, keys | Stop pushes. The push endpoint and RFC 8291 keys it carries |
 
@@ -132,9 +133,11 @@ affected by SHA-1's collision weakness.
   A 6-digit PIN falls in about 6 hours on a 20-core desktop (README). Use a passphrase.
 - **The device is graded `none`.** There is no hardware attestation, so it cannot be used for
   MFA-grade device sign-on.
-- **Pairing is trust on first use.** An attacker with a certificate this machine trusts for the
-  KyIdentity host, present during pairing, can enrol its own key; nothing checks the key out of
-  band. A pin would not help, since nothing is pinned yet at that moment.
+- **PIN pairing is trust on first use.** An attacker with a certificate this machine trusts for
+  the KyIdentity host, present during PIN pairing, can enrol its own key; nothing checks the key
+  out of band. A 6-digit PIN is too small to key a MAC (brute-forced offline), so only QR pairing
+  carries the pairing proof. QR pairing holds only against a KyIdentity release with pairing
+  proof; an older server refuses it.
 - **The click package is unsigned** (it carries only build provenance), and no release is published yet
   ([VERIFYING-RELEASES.md](VERIFYING-RELEASES.md)).
 - Dynamic memory-error checking covers only the scanned/pasted-code parsers: CI fuzzes
@@ -145,8 +148,9 @@ affected by SHA-1's collision weakness.
 ## Evidence
 
 - **Tests:** `ctest` runs `test_crypto` (RFC 8291 and RFC 7914 vectors), `test_totp`
-  (RFC 6238), `test_protocol` (pairing, challenge parsing, KyAuth-Android golden strings),
-  `test_vault`, `test_controller` (lock, save failure, push requeue, request binding) and a QML
+  (RFC 6238), `test_protocol` (pairing, pairing-proof golden vector, challenge parsing, KyAuth-Android golden strings),
+  `test_vault`, `test_controller` (lock, save failure, push requeue, request binding, pairing proof: tampered
+  or missing reply proof saves nothing, PIN unchanged) and a QML
   smoke test that fails on any QML warning.
 - **TLS regressions:** `test_tls` drives the real production request through local
   TLS servers. Weak leaf/intermediate/root and directly trusted keys, SHA1-signed

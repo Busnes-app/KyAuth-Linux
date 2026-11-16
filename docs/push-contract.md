@@ -21,6 +21,25 @@ Linux adds. Server side: KyIdentity `feat/linux-authenticator`.
 
 A `linux` device may use only `unifiedpush` or `ubuntupush`. `fcm` is refused.
 
+### Pairing proof v1 (QR pairing)
+
+QR pairing never sends `pairingToken`. With
+`K = HMAC-SHA256(key = pairingToken, "kyidentity-pair-key/1")` (not SHA-256(token), which
+KyIdentity stores as `token_hash`) and `origin` the
+canonical origin of `serverUrl` (`originOf`):
+
+- Body: the fields above plus `userId`, without `pairingToken` and `pinCode`.
+- Header `KyIdentity-Pairing-Proof: b64url(HMAC-SHA256(K, "kyidentity-pair/1\n" + origin + "\n" + body))`
+  over the exact body bytes sent.
+- A 2xx reply must carry `KyIdentity-Pairing-Proof:
+  b64url(HMAC-SHA256(K, "kyidentity-pair-reply/1\n" + origin + "\n" + b64url(SHA-256(body)) + "\n" + reply))`
+  over the exact reply bytes, compared in constant time. Missing or wrong: "The server's pairing
+  reply could not be verified." and nothing is saved.
+
+`b64url` has no padding. Requires a KyIdentity release with pairing proof. PIN pairing is
+unchanged (`pinCode` + `userId`, no header). Golden vector: `tests/test_protocol.cpp`
+(`pairingProofVector`).
+
 ## Delivery
 
 Both transports carry the same plaintext: the flat all-string JSON object Android receives

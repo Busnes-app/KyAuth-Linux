@@ -564,7 +564,7 @@ void Controller::refreshPushIfNeeded()
                       + QString::fromLatin1(QUrl::toPercentEncoding(deviceId)) + QStringLiteral("/push-token");
     const PushCredential sent = *push;
     m_refreshing = true;
-    request("PUT", url, body, [this, sent, deviceId](int status, const QByteArray &reply) {
+    requestJson("PUT", url, body, [this, sent, deviceId](int status, const QByteArray &reply) {
         m_refreshing = false;
         if (status < 200 || status > 299)
             return setPushStatus(tr("Could not update push on the server: %1").arg(serverError(status, reply)));
@@ -622,14 +622,24 @@ void Controller::pair(const QString &code)
 
     const P256Key key = generateP256();
     const QString deviceName = tr("KyAuth on %1").arg(QSysInfo::machineHostName().left(60));
-    const QJsonObject body = registrationBody(*req, deviceName,
+    // Serialized once: the proof covers these exact bytes.
+    const QByteArray body = QJsonDocument(registrationBody(
+                                              *req, deviceName,
                                               m_vault->data.value(QStringLiteral("deviceIdentifier")).toString(),
-                                              spkiDer(key), *push);
+                                              spkiDer(key), *push))
+                                .toJson(QJsonDocument::Compact);
+    const QString origin = originOf(req->serverUrl);
+    const QByteArray proofKey = req->pairingToken.isEmpty() ? QByteArray() : pairingKey(req->pairingToken);
     setBusy(true);
     const PairingRequest r = *req;
     const PushCredential sent = *push;
-    request("POST", r.registrationUrl, body, [this, r, key, sent](int status, const QByteArray &reply) {
+    request("POST", r.registrationUrl, body, proofKey.isEmpty() ? QByteArray() : pairingProof(proofKey, origin, body),
+            [this, r, key, sent, body, origin, proofKey](int status, const QByteArray &reply,
+                                                         const QByteArray &replyProof) {
         setBusy(false);
+        if (!proofKey.isEmpty() && status >= 200 && status <= 299
+            && !pairingReplyVerified(proofKey, origin, body, reply, replyProof))
+            return say(tr("The server's pairing reply could not be verified."));
         QString error;
         auto ids = parseRegistration(status, reply, r.userId, &error);
         if (!ids)
@@ -712,7 +722,7 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
                            {QStringLiteral("approve"), approve},
                            {QStringLiteral("signature"), QString::fromLatin1(sig.toBase64())}};
     setBusy(true);
-    request("POST", server + QStringLiteral("/api/mfa/push/respond"), body,
+    requestJson("POST", server + QStringLiteral("/api/mfa/push/respond"), body,
             [this, c, pushed, approve](int status, const QByteArray &reply) {
                 setBusy(false);
                 QString error;
@@ -739,8 +749,15 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
 
 // ---- Plumbing -----------------------------------------------------------------------------
 
-void Controller::request(const QByteArray &verb, const QString &url, const QJsonObject &body,
-                         std::function<void(int, const QByteArray &)> done)
+void Controller::requestJson(const QByteArray &verb, const QString &url, const QJsonObject &body,
+                             std::function<void(int, const QByteArray &)> done)
+{
+    request(verb, url, QJsonDocument(body).toJson(QJsonDocument::Compact), {},
+            [done](int status, const QByteArray &reply, const QByteArray &) { done(status, reply); });
+}
+
+void Controller::request(const QByteArray &verb, const QString &url, const QByteArray &body,
+                         const QByteArray &pairingProof, Done done)
 {
     QNetworkRequest req{QUrl(url)};
     req.setHeader(QNetworkRequest::ContentTypeHeader, QByteArrayLiteral("application/json"));
@@ -749,12 +766,14 @@ void Controller::request(const QByteArray &verb, const QString &url, const QJson
     // Qt 5.15's pre-data encrypted signal is only reliable for HTTP/1.
     req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     req.setTransferTimeout(10000);
+    if (!pairingProof.isEmpty())
+        req.setRawHeader(kPairingProofHeader, pairingProof);
     if (req.url().scheme() != QLatin1String("https"))
-        return done(0, {});
+        return done(0, {}, {});
     const auto unavailableTls = [this, &done] {
         const QString error = tr("Secure networking is unavailable. Install Qt's OpenSSL 3 TLS backend.");
         say(error);
-        done(0, QJsonDocument(QJsonObject{{QStringLiteral("error"), error}}).toJson(QJsonDocument::Compact));
+        done(0, QJsonDocument(QJsonObject{{QStringLiteral("error"), error}}).toJson(QJsonDocument::Compact), {});
     };
 #if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
     if (QSslSocket::activeBackend() != QLatin1String("openssl")
@@ -786,7 +805,7 @@ void Controller::request(const QByteArray &verb, const QString &url, const QJson
     tls.setSslOption(QSsl::SslOptionDisableSessionPersistence, true);
     tls.setSslOption(QSsl::SslOptionDisableSessionTickets, true);
     req.setSslConfiguration(tls);
-    QNetworkReply *reply = m_net.sendCustomRequest(req, verb, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QNetworkReply *reply = m_net.sendCustomRequest(req, verb, body);
     // Qt buffers a body until it finishes, and the transfer timeout only catches silence:
     // bound both the size and the total time, so a bad server can neither fill memory nor hold `busy`.
     reply->setReadBufferSize(kMaxReplyBytes + 1);
@@ -799,8 +818,9 @@ void Controller::request(const QByteArray &verb, const QString &url, const QJson
         reply->deleteLater();
         const QByteArray body = reply->isReadable() ? reply->read(kMaxReplyBytes + 1) : QByteArray();
         if (reply->error() == QNetworkReply::OperationCanceledError || body.size() > kMaxReplyBytes)
-            return done(0, {});
-        done(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(), body);
+            return done(0, {}, {});
+        done(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(), body,
+             reply->rawHeader(kPairingProofHeader));
     });
 }
 
