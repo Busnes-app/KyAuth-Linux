@@ -21,7 +21,7 @@ modules:
     buildsystem: meson
     config-opts:
       # Static: dbus-daemon needs libdbus-1 private symbols, versioned per release
-      # (LIBDBUS_PRIVATE_1.16.2). Meson drops its build-tree rpath on install, so a
+      # (LIBDBUS_PRIVATE_1.16.4). Meson drops its build-tree rpath on install, so a
       # shared build resolves whichever libdbus the runtime ships and dies on any
       # runtime whose dbus differs from the pin. Linking it in removes the coupling.
       - -Ddefault_library=static
@@ -39,8 +39,8 @@ modules:
     cleanup: ['*']
     sources:
       - type: archive
-        url: https://dbus.freedesktop.org/releases/dbus/dbus-1.16.2.tar.xz
-        sha256: 0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2
+        url: https://dbus.freedesktop.org/releases/dbus/dbus-1.16.4.tar.xz
+        sha256: d08b05526c2cb7966a5fb79210d6112b1aca3d135f315c1b302e14b4b0297dac
   - name: kyauth
     buildsystem: cmake-ninja
     # The ctest suite, QML smoke test included, runs inside the build.

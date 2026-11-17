@@ -396,3 +396,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - `ky-ui/` — shared browser theme tokens, navigation state styles, and visual verification for suite web products.
 
 - `KyQuickStart/` — suite installer: third-party app catalog and admission rules, edge and reverse-proxy choices, app-aware bulk backups.
+
+## Release notes
+
+- `CHANGELOG.md` owns pending application release notes and upgrade impact. A version bump alone does not publish a release.
