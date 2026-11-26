@@ -2,7 +2,7 @@
 
 The wire contract KyAuth-Linux depends on. The Android contract (pairing, push v2 binding,
 push-token v2 refresh, `/api/mfa/push/respond`) is unchanged. This file records only what
-Linux adds. Server side: KyIdentity `feat/linux-authenticator`.
+Linux adds on top of that contract with KyIdentity.
 
 ## Registration
 

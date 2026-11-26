@@ -4,7 +4,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Busnes-app/KyAuth-Linux/badge)](https://scorecard.dev/viewer/?uri=github.com/Busnes-app/KyAuth-Linux)
 
 Authenticator codes and KyIdentity push sign-in approvals for **Nura** (postmarketOS) and
-**Ubuntu Touch**. A port of KyAuth-Android.
+**Ubuntu Touch**. A port of [KyAuth for Android](https://github.com/Busnes-app/KyAuth-android).
 
 - **Codes:** TOTP (RFC 6238; SHA-1, SHA-256 and SHA-512; 6 to 8 digits). Scan the
   account's QR code (Ubuntu Touch), paste its `otpauth://totp/` link, or type its setup key
@@ -143,18 +143,20 @@ icon, and the D-Bus activation file the distributor uses to start KyAuth.
 **Ubuntu Touch:** run `clickable build --arch arm64 --accept-review-errors` (Clickable 8.9 or
 later). Install the click from `build/aarch64-linux-gnu/app/` with `clickable install`.
 
-## Security and contributing
-
-- Report vulnerabilities privately through the repository's **Security** tab
-  ([policy](https://github.com/Busnes-app/.github/blob/main/SECURITY.md)).
-- [Contributing](CONTRIBUTING.md) — process, tests and coding standard.
-- [Verifying releases](docs/VERIFYING-RELEASES.md) — check the Flatpak signing key and what is signed (untested: no release is published yet).
-- [Assurance case](docs/ASSURANCE-CASE.md) — threat model, trust boundaries, and why the security requirements are met.
-
 ## Not ported
 
 KyIdentity device sign-on for other apps, and the passkey provider. Both depend on Android
 system services.
+
+## Documentation and contributing
+
+- [User manual](https://busnes.app/manuals/kyauth-linux/) ([Markdown sources](docs/src/introduction.md)) — build and check locally with `mdbook build docs` and `python3 docs/check-links.py`, then open `docs/book/index.html`. The documentation workflow also uploads a `documentation-book` artifact.
+- [Distribution](docs/DISTRIBUTION.md) — what a release tag builds and where it is published.
+- [Verifying releases](docs/VERIFYING-RELEASES.md) — check the signed Flatpak and its source (untested: no release is published yet).
+- [Push contract](docs/push-contract.md) — the wire contract with KyIdentity for pairing and Push MFA.
+- [Assurance case](docs/ASSURANCE-CASE.md) — threat model, trust boundaries, and why the security requirements are met.
+- [Contributing](CONTRIBUTING.md) — process, tests, and coding standard.
+- [Security policy](SECURITY.md) — security model and private vulnerability reporting route ([org policy](https://github.com/Busnes-app/.github/blob/main/SECURITY.md)).
 
 ## License
 
@@ -162,21 +164,3 @@ KyAuth for Linux phones is released under the [MIT License](LICENSE.txt). It bun
 Space Grotesk typeface under the [SIL Open Font License 1.1](fonts/Space_Grotesk/OFL.txt).
 
 [![OctoCounts](https://api.octocounts.com/badge/Busnes-app/KyAuth-Linux/branch/master)](https://octocounts.com/github/Busnes-app/KyAuth-Linux/tree/master)
-
-## Documentation
-
-- [Distribution](docs/DISTRIBUTION.md) — what a release tag builds and where it is published.
-- [Verifying releases](docs/VERIFYING-RELEASES.md) — check the signed Flatpak and its source.
-- [Push contract](docs/push-contract.md) — the wire contract with KyIdentity for pairing and Push MFA.
-- [Assurance case](docs/ASSURANCE-CASE.md) — threat model, trust boundaries, and why the security requirements are met.
-- [Contributing](CONTRIBUTING.md) — how to propose a change and what it must pass.
-- [Security policy](SECURITY.md) — how to report a vulnerability privately.
-
-## User manual
-
-Read the [online manual](https://busnes.app/manuals/kyauth-linux/) or browse its
-[Markdown sources](docs/src/introduction.md).
-
-Build and check it with `mdbook build docs` and `python3 docs/check-links.py`,
-then open `docs/book/index.html`. The documentation workflow also provides a
-downloadable `documentation-book` artifact.

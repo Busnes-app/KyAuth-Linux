@@ -5,7 +5,7 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`, which makes two install
 | Platform | Installable | Updates |
 |---|---|---|
 | Ubuntu Touch | `kyauth.busnes_<version>_arm64.click` on the GitHub release | by installing the next release |
-| Nura and Linux desktops | the signed Flatpak repository at https://busnes-app.github.io/KyAuth-Linux, and `kyauth-<arch>.flatpak` bundles on the release | `flatpak update`, from either |
+| Nura and Linux desktops | the signed Flatpak repository at <https://busnes-app.github.io/KyAuth-Linux>, and `kyauth-<arch>.flatpak` bundles on the release | `flatpak update`, from either |
 
 The Flatpak is built for x86_64 and aarch64, each on a native runner, and every pull request
 builds and smoke-tests both. A bundle carries the repository URL and signing key, so a bundle
