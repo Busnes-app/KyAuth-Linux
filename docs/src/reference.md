@@ -3,8 +3,8 @@
 ## Product reference
 
 The [repository README](https://github.com/Busnes-app/KyAuth-Linux/blob/master/README.md) links the current installation commands,
-environment reference and supported deployment/distribution paths. Read the version matching your installation.
-The links below open repository documents and need network access.
+environment reference and supported deployment and distribution paths. Read the version matching your installation.
+The links below open repository documents and require network access.
 
 - [Push protocol and transport](https://github.com/Busnes-app/KyAuth-Linux/blob/master/docs/push-contract.md)
 - [Distribution and updates](https://github.com/Busnes-app/KyAuth-Linux/blob/master/docs/DISTRIBUTION.md)
@@ -22,5 +22,5 @@ Do not publish credentials or private data in a public issue.
 
 ## Versions
 
-Use the [release record](https://github.com/Busnes-app/KyAuth-Linux/releases) and, where present, the repository changelog.
+Use the [release record](https://github.com/Busnes-app/KyAuth-Linux/releases) and the [changelog](https://github.com/Busnes-app/KyAuth-Linux/blob/master/CHANGELOG.md).
 A successful build is not proof of a published or qualified release.
