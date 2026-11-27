@@ -794,6 +794,96 @@ private slots:
         r.done(204, {});
         QCOMPARE(c.requests.size(), 2); // acknowledged: nothing left to send
     }
+
+    void hybridPairingSignsPushResponseAndRefresh()
+    {
+        if (!hybridSigAvailable())
+            QSKIP("OpenSSL without ML-DSA-65 support");
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        setUp(c);
+        c.m_latestToken = QStringLiteral("https://push.example.net/up1");
+        const QString token = QStringLiteral("00112233445566778899aabbccddeeff0011223344556677");
+        c.pair(QStringLiteral("{\"type\":\"kyidentity_device_pairing\",\"serverUrl\":\"https://id.example.com\","
+                              "\"pairingToken\":\"%1\",\"userId\":\"u1\",\"username\":\"alice\"}")
+                   .arg(token));
+        QCOMPARE(c.requests.size(), 1);
+        const FakeController::Request reg = c.requests.at(0);
+        const QByteArray pub = b64(reg.body.value(QStringLiteral("publicKey")));
+        QCOMPARE(pub.size(), 2000);
+        QVERIFY(pub.startsWith(QByteArray("mldsa65+ed25519\0", 16)));
+
+        const QByteArray key = pairingKey(token);
+        const QByteArray replyBody = "{\"success\":true,\"deviceId\":\"d1\",\"device\":{\"userId\":\"u1\"}}";
+        reg.done(200, replyBody, pairingReplyProof(key, server, reg.raw, replyBody));
+        QCOMPARE(c.pairing().value(QStringLiteral("username")).toString(), QStringLiteral("alice"));
+
+        // Lock and unlock to verify hybrid key survives vault persistence.
+        c.lock();
+        c.unlock(pass);
+        QTRY_COMPARE(c.state(), QStringLiteral("unlocked"));
+
+        b.handlePushBody(challengePush(c, "c-hyb"));
+        c.approve(QStringLiteral("c-hyb"), QStringLiteral("77"));
+        QCOMPARE(c.requests.size(), 2);
+        const FakeController::Request resp = c.requests.at(1);
+        const QByteArray signedText = QByteArray("kyidentity-push-v2|https://id.example.com|u1|d1|c-hyb|login|")
+                                    + QByteArray::number(b.m_challenge->expiresAtMs) + "|approve|77";
+        const QByteArray respSig = b64(resp.body.value(QStringLiteral("signature")));
+        QVERIFY(verifyHybridSig(pub, QByteArray(kHybridPushResponseLabel), signedText, respSig));
+        QVERIFY(!verifyHybridSig(pub, QByteArray(kHybridPushTokenLabel), signedText, respSig));
+        resp.done(200, "{\"success\":true}");
+
+        b.m_latestToken = QStringLiteral("https://push.example.net/up2");
+        b.refreshPushIfNeeded();
+        QCOMPARE(c.requests.size(), 3);
+        const FakeController::Request ref = c.requests.at(2);
+        const PushCredential now = *b.currentPush();
+        auto text = pushTokenMessage(server, QStringLiteral("d1"),
+                                     qint64(ref.body.value(QStringLiteral("issuedAt")).toDouble()), now);
+        QVERIFY(verifyHybridSig(pub, QByteArray(kHybridPushTokenLabel), *text,
+                                b64(ref.body.value(QStringLiteral("signature")))));
+        ref.done(204, {});
+    }
+
+    void hybridPairingFallsBackToP256OnLegacyServer()
+    {
+        if (!hybridSigAvailable())
+            QSKIP("OpenSSL without ML-DSA-65 support");
+        QTemporaryDir dir;
+        FakeController c(dir.path(), fast);
+        Controller &b = c;
+        setUp(c);
+        c.m_latestToken = QStringLiteral("https://push.example.net/up1");
+        const QString token = QStringLiteral("11223344556677889900aabbccddeeff1122334455667788");
+        c.pair(QStringLiteral("{\"type\":\"kyidentity_device_pairing\",\"serverUrl\":\"https://id.example.com\","
+                              "\"pairingToken\":\"%1\",\"userId\":\"u1\",\"username\":\"alice\"}")
+                   .arg(token));
+        QCOMPARE(c.requests.size(), 1);
+        QCOMPARE(b64(c.requests.at(0).body.value(QStringLiteral("publicKey"))).size(), 2000);
+
+        // Legacy server rejects non-P-256 key before consuming the pairing token.
+        c.requests.at(0).done(400, "{\"error\":\"invalid_request\",\"error_description\":\"device public key is not a valid P-256 key\"}");
+        QCOMPARE(c.requests.size(), 2);
+        const FakeController::Request fallback = c.requests.at(1);
+        const QByteArray spki = b64(fallback.body.value(QStringLiteral("publicKey")));
+        QCOMPARE(spki.size(), 91); // P-256 SPKI DER
+        const QByteArray key = pairingKey(token);
+        QCOMPARE(fallback.proof, pairingProof(key, server, fallback.raw));
+
+        const QByteArray replyBody = "{\"success\":true,\"deviceId\":\"d1\",\"device\":{\"userId\":\"u1\"}}";
+        fallback.done(200, replyBody, pairingReplyProof(key, server, fallback.raw, replyBody));
+        QCOMPARE(c.pairing().value(QStringLiteral("username")).toString(), QStringLiteral("alice"));
+
+        b.handlePushBody(challengePush(c, "c-p256"));
+        c.approve(QStringLiteral("c-p256"), QStringLiteral("12"));
+        QCOMPARE(c.requests.size(), 3);
+        const FakeController::Request resp = c.requests.at(2);
+        const QByteArray signedText = QByteArray("kyidentity-push-v2|https://id.example.com|u1|d1|c-p256|login|")
+                                    + QByteArray::number(b.m_challenge->expiresAtMs) + "|approve|12";
+        QVERIFY(verifyDer(spki, signedText, b64(resp.body.value(QStringLiteral("signature")))));
+    }
 };
 
 QTEST_MAIN(TestController)

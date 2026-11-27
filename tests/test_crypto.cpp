@@ -1,5 +1,9 @@
 #include "crypto.h"
 
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QtTest>
 
 using namespace ky;
@@ -69,6 +73,84 @@ private slots:
         QVERIFY(verifyDer(spki, "kyidentity-push-v2|x", sig));
         QVERIFY(!verifyDer(spki, "kyidentity-push-v2|y", sig));
         QVERIFY(!verifyDer(spkiDer(generateP256()), "kyidentity-push-v2|x", sig));
+    }
+
+    void hybridSigRoundTripAndTamper()
+    {
+        if (!hybridSigAvailable())
+            QSKIP("OpenSSL without ML-DSA-65 support");
+        const auto k = generateHybridSig();
+        QVERIFY(k.has_value());
+        QCOMPARE(k->mldsaSeed.size(), 32);
+        QCOMPARE(k->edSeed.size(), 32);
+        QCOMPARE(k->pub.size(), 2000);
+        QVERIFY(k->pub.startsWith(QByteArray("mldsa65+ed25519\0", 16)));
+
+        const QByteArray label(kHybridPushResponseLabel);
+        const QByteArray msg("kyidentity-push-v2|x");
+        const QByteArray sig = signHybridSig(*k, label, msg);
+        QCOMPARE(sig.size(), 3389);
+        QVERIFY(sig.startsWith(QByteArray("mldsa65+ed25519\0", 16)));
+        QVERIFY(verifyHybridSig(k->pub, label, msg, sig));
+        QVERIFY(!verifyHybridSig(k->pub, label, "kyidentity-push-v2|y", sig));
+        QVERIFY(!verifyHybridSig(k->pub, QByteArray(kHybridPushTokenLabel), msg, sig));
+        QVERIFY(!verifyHybridSig(k->pub, QByteArray(), msg, sig));
+        QVERIFY(!verifyHybridSig(k->pub, QByteArray("bad\0label", 9), msg, sig));
+        QVERIFY(signHybridSig(*k, QByteArray(), msg).isEmpty());
+        QVERIFY(signHybridSig(*k, QByteArray("bad\0label", 9), msg).isEmpty());
+
+        QByteArray badMldsa = sig;
+        badMldsa[16] = char(badMldsa.at(16) ^ 0x01);
+        QVERIFY(!verifyHybridSig(k->pub, label, msg, badMldsa));
+
+        QByteArray badEd = sig;
+        badEd[badEd.size() - 1] = char(badEd.at(badEd.size() - 1) ^ 0x01);
+        QVERIFY(!verifyHybridSig(k->pub, label, msg, badEd));
+
+        const auto other = generateHybridSig();
+        QVERIFY(other.has_value());
+        QVERIFY(!verifyHybridSig(other->pub, label, msg, sig));
+    }
+
+    void hybridSigKyPrimitivesVectors()
+    {
+        if (!hybridSigAvailable())
+            QSKIP("OpenSSL without ML-DSA-65 support");
+        QFile f(QFINDTESTDATA("hybridsig_vectors.json"));
+        QVERIFY2(f.open(QIODevice::ReadOnly), "hybridsig_vectors.json missing");
+        const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
+        const QByteArray mldsaSeed = QByteArray::fromHex(root.value(QStringLiteral("mldsa65_seed")).toString().toLatin1());
+        const QByteArray edSeed = QByteArray::fromHex(root.value(QStringLiteral("ed25519_seed")).toString().toLatin1());
+        const QByteArray wantPub = QByteArray::fromHex(root.value(QStringLiteral("public_key")).toString().toLatin1());
+
+        const auto derived = hybridSigFromSeeds(mldsaSeed, edSeed);
+        QVERIFY(derived.has_value());
+        QCOMPARE(derived->pub, wantPub);
+
+        const QJsonArray valid = root.value(QStringLiteral("valid")).toArray();
+        QVERIFY(!valid.isEmpty());
+        for (const QJsonValue &v : valid) {
+            const QJsonObject o = v.toObject();
+            const QByteArray label = o.value(QStringLiteral("label")).toString().toUtf8();
+            const QByteArray msg = QByteArray::fromHex(o.value(QStringLiteral("msg")).toString().toLatin1());
+            const QByteArray sig = QByteArray::fromHex(o.value(QStringLiteral("sig")).toString().toLatin1());
+            QVERIFY2(verifyHybridSig(wantPub, label, msg, sig),
+                     qPrintable(QStringLiteral("valid vector failed: %1").arg(o.value(QStringLiteral("name")).toString())));
+            const QByteArray fresh = signHybridSig(*derived, label, msg);
+            QVERIFY2(verifyHybridSig(wantPub, label, msg, fresh),
+                     qPrintable(QStringLiteral("re-signed vector failed: %1").arg(o.value(QStringLiteral("name")).toString())));
+        }
+
+        const QJsonArray invalid = root.value(QStringLiteral("invalid")).toArray();
+        QVERIFY(!invalid.isEmpty());
+        for (const QJsonValue &v : invalid) {
+            const QJsonObject o = v.toObject();
+            const QByteArray label = o.value(QStringLiteral("label")).toString().toUtf8();
+            const QByteArray msg = QByteArray::fromHex(o.value(QStringLiteral("msg")).toString().toLatin1());
+            const QByteArray sig = QByteArray::fromHex(o.value(QStringLiteral("sig")).toString().toLatin1());
+            QVERIFY2(!verifyHybridSig(wantPub, label, msg, sig),
+                     qPrintable(QStringLiteral("invalid vector accepted: %1").arg(o.value(QStringLiteral("name")).toString())));
+        }
     }
 
     void scryptRfc7914Vector()
