@@ -788,6 +788,8 @@ void Controller::request(const QByteArray &verb, const QString &url, const QByte
         return unavailableTls();
     QSslConfiguration tls = req.sslConfiguration();
     tls.setProtocol(QSsl::TlsV1_2OrLater);
+    // Keep OpenSSL's default groups: >=3.5 offers X25519MLKEM768 alongside
+    // classical groups. A classical-only curve list here would disable PQ TLS.
     tls.setPeerVerifyMode(QSslSocket::VerifyPeer);
     // Level 2 enforces exchange/signature strength, but newer OpenSSL estimates
     // RSA-2047 as 112 bits. Enforce literal certificate sizes as well.

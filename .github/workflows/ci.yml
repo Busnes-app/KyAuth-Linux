@@ -17,7 +17,7 @@ jobs:
   test:
     name: Test (${{ matrix.qt }})
     if: github.event.pull_request.draft != true
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -25,11 +25,13 @@ jobs:
         include:
           # Qt 5.15 is what Ubuntu Touch ships; Qt 6 is what Nura's Plasma Mobile ships.
           - qt: qt5
+            qt_package: Qt5
             packages: >-
               qtbase5-dev qtdeclarative5-dev qtquickcontrols2-5-dev qml-module-qtquick2
               qml-module-qtquick-controls2 qml-module-qtquick-layouts qml-module-qtquick-window2
               qml-module-qtquick-templates2 qml-module-qtqml-models2
           - qt: qt6
+            qt_package: Qt6
             packages: >-
               qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls
               qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-window
@@ -42,15 +44,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build g++ libssl-dev dbus-daemon ${{ matrix.packages }}
       - name: Build
         run: |
-          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQT_DIR=/usr/lib/x86_64-linux-gnu/cmake/${{ matrix.qt_package }}
           cmake --build build
-      - name: Test
+      - name: Test (require OpenSSL >= 3.5 and hybrid TLS)
+        env:
+          KYAUTH_REQUIRE_PQ_TLS: "1"
         run: ctest --test-dir build --output-on-failure
+      - name: Keep native TLS test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-tls-${{ matrix.qt }}
+          path: build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
 
   click:
     name: Ubuntu Touch click (arm64)
     if: github.event.pull_request.draft != true
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,7 +81,7 @@ jobs:
   fuzz:
     name: Fuzz scanned codes
     if: github.event.pull_request.draft != true
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

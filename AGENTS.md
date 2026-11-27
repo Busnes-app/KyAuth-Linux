@@ -35,7 +35,9 @@ CredentialProvider) are not ported.
   certificate sizes. Startup materializes OS CAs; requests filter anchors with no
   fallback or on-demand roots, force HTTP/1.1/full handshakes and check peer chains
   in the pre-data `encrypted` signal. Pool only checked connections in `m_net`.
-  Keep CA/name/time validation and manual redirects.
+  Keep CA/name/time validation and manual redirects. Leave key-exchange groups at
+  OpenSSL defaults so >=3.5 can negotiate X25519MLKEM768 with classical fallback;
+  older Ubuntu Touch runtimes remain supported without a PQ claim.
 - KyAuth does not pin KyIdentity's certificate (owner, 2026-11-16, after a request-by-request
   audit; `docs/ASSURANCE-CASE.md`, Trust boundaries 1). MFA answers and push-token updates are
   device-signed and bound, so they hold without one. A new request that changes server state must
@@ -121,15 +123,21 @@ CredentialProvider) are not ported.
   mixed legacy/strong encrypted-vault reload, refused import/copy, QML error text and
   countdown visibility, and explicit legacy deletion. `KYAUTH_TEST_CAPTURE=<path>`
   optionally captures that test's synthetic account screen for local inspection.
-- CI (`.github/workflows/ci.yml`): Qt 5 and Qt 6 builds with tests, plus the arm64 click build,
-  plus `fuzz`: libFuzzer (clang, ASan+UBSan, `-DKYAUTH_FUZZ=ON`) over `parsePairing` and
+- CI (`.github/workflows/ci.yml`): Ubuntu 26.04 Qt 5 and Qt 6 builds with tests;
+  `KYAUTH_REQUIRE_PQ_TLS=1` requires QtNetwork's actual OpenSSL runtime >=3.5 and
+  successful hybrid negotiation. Keep each matrix leg bound to its Qt major.
+  The arm64 click build retains its Ubuntu Touch SDK. `fuzz` runs libFuzzer
+  (clang, ASan+UBSan, `-DKYAUTH_FUZZ=ON`) over `parsePairing` and
   `parseOtpauth`, the text a QR scan or paste supplies. It replays `fuzz/corpus/scan/` and
   fuzzes for 60 s; commands are in `fuzz/CMakeLists.txt`. A crash input joins the corpus with
   a matching `test_protocol`/`test_totp` case. Its checks are the accepted-input invariants
   in `fuzz/scan_fuzzer.cpp`; change them with the parser.
 - `tls` exercises the real `Controller::request` against weak/strong TLS servers,
   including chain keys, protocol versions, trust/name/expiry, redirects, repeats and the
-  pairing-proof header round trip.
+  pairing-proof header round trip. `tls13Groups` uses the production request path
+  against loopback OpenSSL peers and asserts ServerHello's TLS 1.3 key_share for
+  hybrid preference, hybrid-only and classical-only peers. Run with
+  `KYAUTH_REQUIRE_PQ_TLS=1` when qualifying PQ; see `docs/native-tls-evidence.md`.
   Refusals must send no HTTP bytes; weak fixtures need successful low-security
   controls. It uses the OpenSSL CLI for throwaway certificates, not live secrets.
 - `unifiedpush` drives the real connector over an owned `dbus-run-session`, with

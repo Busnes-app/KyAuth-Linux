@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QNetworkReply>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QSslCertificate>
 #include <QSslConfiguration>
 #include <QSslDiffieHellmanParameters>
@@ -15,6 +16,18 @@
 #include <QtTest>
 #include <openssl/pem.h>
 #include <memory>
+
+// Always reap the loopback peer, including when a test assertion returns early.
+class OpenSslServer : public QProcess {
+public:
+    ~OpenSslServer() override
+    {
+        if (state() != QProcess::NotRunning) {
+            kill();
+            waitForFinished(5000);
+        }
+    }
+};
 
 // Expose the actual production request implementation, without overriding it.
 class NetworkController : public Controller {
@@ -126,7 +139,8 @@ class TestTls : public QObject {
                      const QString &digest = QStringLiteral("-sha256"), int days = 2)
     {
         openssl({QStringLiteral("req"), QStringLiteral("-new"), QStringLiteral("-key"),
-                 name + QStringLiteral(".key"), QStringLiteral("-subj"), QStringLiteral("/CN=localhost"),
+                 name + QStringLiteral(".key"), QStringLiteral("-subj"),
+                 ca ? QStringLiteral("/CN=") + name : QStringLiteral("/CN=localhost"),
                  QStringLiteral("-out"), name + QStringLiteral(".csr")});
         openssl({QStringLiteral("x509"), QStringLiteral("-req"), QStringLiteral("-in"),
                  name + QStringLiteral(".csr"), QStringLiteral("-CA"), issuer + QStringLiteral(".crt"),
@@ -168,8 +182,13 @@ class TestTls : public QObject {
         config.setBackendConfigurationOption(QByteArrayLiteral("CipherString"),
             dh.isEmpty() ? QByteArrayLiteral("ALL:@SECLEVEL=0")
                          : QByteArrayLiteral("DHE-RSA-AES128-GCM-SHA256:@SECLEVEL=0"));
-        if (!dh.isEmpty())
+        if (!dh.isEmpty()) {
+            // The fixture must use these parameters, not negotiate a stronger
+            // default FFDHE group (OpenSSL 4). This is server-only test policy.
+            if (dh.startsWith(QLatin1String("dh_1024")))
+                config.setBackendConfigurationOption(QByteArrayLiteral("Groups"), QByteArrayLiteral("P-256"));
             config.setDiffieHellmanParameters(QSslDiffieHellmanParameters::fromEncoded(read(path(dh))));
+        }
         return config;
     }
 
@@ -185,6 +204,13 @@ private slots:
         qInfo("Qt build %s, runtime %s; TLS build %s, runtime %s", QT_VERSION_STR, qVersion(),
               qPrintable(QSslSocket::sslLibraryBuildVersionString()),
               qPrintable(QSslSocket::sslLibraryVersionString()));
+        // Qt can load a different libssl from the CLI or the vault's libcrypto.
+        // CI must prove the actual application TLS runtime, not just apt metadata.
+        if (qEnvironmentVariableIntValue("KYAUTH_REQUIRE_PQ_TLS") == 1) {
+            QVERIFY(QSslSocket::sslLibraryVersionString().startsWith(QLatin1String("OpenSSL ")));
+            QVERIFY2(QSslSocket::sslLibraryVersionNumber() >= 0x30500000L,
+                     "PQ TLS CI requires QtNetwork's OpenSSL runtime >= 3.5");
+        }
         original = QSslConfiguration::defaultConfiguration();
         write(QStringLiteral("ca.ext"), QByteArrayLiteral("basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n"));
         write(QStringLiteral("leaf.ext"), QByteArrayLiteral("basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost\n"));
@@ -314,11 +340,19 @@ private slots:
             QNetworkRequest request{QUrl(url)};
             request.setHeader(QNetworkRequest::ContentTypeHeader, QByteArrayLiteral("application/octet-stream"));
             request.setTransferTimeout(5000);
+            if (!dh.isEmpty()) {
+                auto controlTls = defaults;
+                controlTls.setBackendConfigurationOption(QByteArrayLiteral("Groups"), QByteArrayLiteral("P-256"));
+                request.setSslConfiguration(controlTls);
+            }
             QNetworkReply *reply = manager.post(request, QByteArrayLiteral("fixture-control"));
             QSignalSpy finished(reply, &QNetworkReply::finished);
             QVERIFY(finished.wait(7000));
             QVERIFY2(reply->error() == QNetworkReply::NoError,
                      qPrintable(reply->errorString() + QStringLiteral("; server: ") + server.handshakeError));
+            if (!dh.isEmpty())
+                QCOMPARE(reply->sslConfiguration().ephemeralServerKey().length(),
+                         dh.startsWith(QLatin1String("dh_1024")) ? 1024 : 2048);
             QVERIFY(server.received.contains("fixture-control"));
             server.received.clear();
             delete reply;
@@ -349,6 +383,79 @@ private slots:
         }
         if (accepted)
             QCOMPARE(server.connections - connectionsBefore, 1); // also exercises a reused TLS connection
+    }
+
+    void tls13Groups_data()
+    {
+        QTest::addColumn<QString>("groups");
+        QTest::addColumn<int>("expectedGroup");
+        QTest::newRow("hybrid-preferred") << QStringLiteral("X25519MLKEM768:X25519") << 4588;
+        QTest::newRow("hybrid-only") << QStringLiteral("X25519MLKEM768") << 4588;
+        QTest::newRow("classical-fallback") << QStringLiteral("X25519") << 29;
+    }
+
+    void tls13Groups()
+    {
+        // Ubuntu Touch's older runtime remains supported, but earns no PQ claim.
+        // initTestCase makes an old runtime a failure in the required CI jobs.
+        if (QSslSocket::sslLibraryVersionNumber() < 0x30500000L)
+            QSKIP("Hybrid TLS needs QtNetwork OpenSSL >= 3.5; CI requires it");
+        QFETCH(QString, groups);
+        QFETCH(int, expectedGroup);
+        QSslConfiguration defaults = original;
+        defaults.setCaCertificates(QSslCertificate::fromPath(path(QStringLiteral("root.crt"))));
+        QSslConfiguration::setDefaultConfiguration(defaults);
+
+        // Qt has no public negotiated-group accessor. Observe the peer's actual
+        // ServerHello key_share, not a cipher name or the offered/shared groups.
+        // Port 0 is allocated by the OS; no reserve/close/rebind race.
+        QByteArray trace;
+        OpenSslServer server;
+        server.setProcessChannelMode(QProcess::MergedChannels);
+        server.setWorkingDirectory(files.path());
+        write(QStringLiteral("pq-response"), QByteArrayLiteral(
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"));
+        connect(&server, &QProcess::readyReadStandardOutput, this, [&] {
+            trace += server.readAllStandardOutput();
+        });
+        server.start(QStringLiteral("openssl"), {
+            QStringLiteral("s_server"), QStringLiteral("-accept"), QStringLiteral("127.0.0.1:0"),
+            QStringLiteral("-cert"), path(QStringLiteral("rsa2048.crt")),
+            QStringLiteral("-key"), path(QStringLiteral("rsa2048.key")),
+            QStringLiteral("-tls1_3"), QStringLiteral("-groups"), groups,
+            QStringLiteral("-HTTP"), QStringLiteral("-trace"), QStringLiteral("-naccept"), QStringLiteral("1")});
+        QVERIFY(server.waitForStarted(5000));
+        const QRegularExpression listening(QStringLiteral("ACCEPT 127\\.0\\.0\\.1:([0-9]+)"));
+        QTRY_VERIFY_WITH_TIMEOUT(listening.match(QString::fromLatin1(trace)).hasMatch()
+                                 || server.state() == QProcess::NotRunning, 5000);
+        const auto address = listening.match(QString::fromLatin1(trace));
+        QVERIFY2(address.hasMatch(), trace.constData());
+
+        int status = -1;
+        QByteArray response;
+        NetworkController controller(files.path(), ky::ScryptParams{1024, 8, 1});
+        controller.request(QByteArrayLiteral("GET"),
+            QStringLiteral("https://localhost:%1/pq-response").arg(address.captured(1)), {}, {},
+            [&](int value, const QByteArray &body, const QByteArray &) {
+                status = value;
+                response = body;
+            });
+        QTRY_VERIFY_WITH_TIMEOUT(status != -1, 12000);
+        QCOMPARE(status, 200);
+        QCOMPARE(response, QByteArrayLiteral("{}"));
+        QTRY_COMPARE_WITH_TIMEOUT(server.state(), QProcess::NotRunning, 5000);
+        QCOMPARE(server.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(server.exitCode(), 0);
+        const QRegularExpression keyShare(QStringLiteral(
+            "ServerHello,.*?extension_type=supported_versions\\(43\\), length=2\\s+TLS 1.3 \\(772\\)\\s+"
+            "extension_type=key_share\\(51\\), length=[0-9]+\\s+NamedGroup: ([^ ]+) \\(([0-9]+)\\)"),
+            QRegularExpression::DotMatchesEverythingOption);
+        const auto negotiated = keyShare.match(QString::fromLatin1(trace));
+        QVERIFY2(negotiated.hasMatch(), "No ServerHello key_share in OpenSSL trace");
+        QCOMPARE(negotiated.captured(2).toInt(), expectedGroup);
+        if (expectedGroup == 4588)
+            QCOMPARE(negotiated.captured(1), QStringLiteral("X25519MLKEM768"));
+        qInfo("TLSv1.3 negotiated group: %s (%d)", qPrintable(negotiated.captured(1)), expectedGroup);
     }
 
     void redirectsAndHostnames()
