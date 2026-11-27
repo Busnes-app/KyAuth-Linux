@@ -21,6 +21,23 @@ QByteArray spkiDer(const P256Key &key);
 QByteArray signDer(const P256Key &key, const QByteArray &message);
 bool verifyDer(const QByteArray &spki, const QByteArray &message, const QByteArray &signature);
 
+// Hybrid ML-DSA-65 + Ed25519 signing key matching ky-primitives/hybridsig ("mldsa65+ed25519").
+struct HybridKey {
+    QByteArray mldsaSeed; // 32 bytes
+    QByteArray edSeed;    // 32 bytes
+    QByteArray pub;       // 2000 bytes: "mldsa65+ed25519\0" || ML-DSA-65(1952) || Ed25519(32)
+};
+
+inline constexpr char kHybridPushResponseLabel[] = "kyidentity/1/push-response";
+inline constexpr char kHybridPushTokenLabel[] = "kyidentity/1/push-token-refresh";
+
+bool hybridSigAvailable();
+std::optional<HybridKey> generateHybridSig();
+std::optional<HybridKey> hybridSigFromSeeds(const QByteArray &mldsaSeed, const QByteArray &edSeed);
+QByteArray signHybridSig(const HybridKey &key, const QByteArray &label, const QByteArray &message);
+bool verifyHybridSig(const QByteArray &pubKey, const QByteArray &label, const QByteArray &message,
+                     const QByteArray &signature);
+
 // Literal TLS certificate public-key floors only; TLS still verifies trust and signatures.
 bool tlsCertificateKeyAllowed(const QByteArray &certificateDer);
 

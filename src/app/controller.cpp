@@ -42,6 +42,31 @@ P256Key keyFrom(const QJsonValue &v)
             QByteArray::fromBase64(o.value(QStringLiteral("pub")).toString().toLatin1())};
 }
 
+QJsonObject hybridKeyJson(const HybridKey &k)
+{
+    return {{QStringLiteral("alg"), QStringLiteral("mldsa65+ed25519")},
+            {QStringLiteral("mldsaSeed"), QString::fromLatin1(k.mldsaSeed.toBase64())},
+            {QStringLiteral("edSeed"), QString::fromLatin1(k.edSeed.toBase64())},
+            {QStringLiteral("pub"), QString::fromLatin1(k.pub.toBase64())}};
+}
+
+std::optional<HybridKey> hybridKeyFrom(const QJsonValue &v)
+{
+    const QJsonObject o = v.toObject();
+    if (o.value(QStringLiteral("alg")).toString() != QLatin1String("mldsa65+ed25519"))
+        return std::nullopt;
+    return HybridKey{QByteArray::fromBase64(o.value(QStringLiteral("mldsaSeed")).toString().toLatin1()),
+                     QByteArray::fromBase64(o.value(QStringLiteral("edSeed")).toString().toLatin1()),
+                     QByteArray::fromBase64(o.value(QStringLiteral("pub")).toString().toLatin1())};
+}
+
+QByteArray signDeviceMessage(const QJsonValue &keyValue, const char *hybridLabel, const QByteArray &message)
+{
+    if (auto hk = hybridKeyFrom(keyValue))
+        return signHybridSig(*hk, QByteArray(hybridLabel), message);
+    return signDer(keyFrom(keyValue), message);
+}
+
 QJsonObject pushJson(const PushCredential &p)
 {
     return {{QStringLiteral("transport"), p.transport}, {QStringLiteral("token"), p.token},
@@ -553,13 +578,15 @@ void Controller::refreshPushIfNeeded()
     auto msg = pushTokenMessage(originOf(server), deviceId, issuedAt, *push);
     if (!msg)
         return;
+    const QByteArray sig = signDeviceMessage(p.value(QStringLiteral("key")), kHybridPushTokenLabel, *msg);
+    if (sig.isEmpty())
+        return setPushStatus(tr("Could not sign the push update."));
     QJsonObject body{{QStringLiteral("pushToken"), push->token},
                      {QStringLiteral("pushTransport"), push->transport},
                      {QStringLiteral("pushP256dh"), push->p256dh},
                      {QStringLiteral("pushAuth"), push->auth},
                      {QStringLiteral("issuedAt"), double(issuedAt)},
-                     {QStringLiteral("signature"),
-                      QString::fromLatin1(signDer(keyFrom(p.value(QStringLiteral("key"))), *msg).toBase64())}};
+                     {QStringLiteral("signature"), QString::fromLatin1(sig.toBase64())}};
     const QString url = server + QStringLiteral("/api/notifications/native/devices/")
                       + QString::fromLatin1(QUrl::toPercentEncoding(deviceId)) + QStringLiteral("/push-token");
     const PushCredential sent = *push;
@@ -619,24 +646,48 @@ void Controller::pair(const QString &code)
     auto push = currentPush();
     if (!push)
         return say(tr("Push is not ready yet: %1").arg(m_pushStatus), "warning");
+    submitPairing(*req, *push, hybridSigAvailable());
+}
 
-    const P256Key key = generateP256();
+void Controller::submitPairing(const PairingRequest &r, const PushCredential &sent, bool useHybrid)
+{
+    if (!m_vault)
+        return say(tr("Locked before pairing finished. Pair again."), "warning");
+
+    QByteArray pubBytes;
+    QJsonObject storedKey;
+    if (useHybrid) {
+        if (auto hk = generateHybridSig()) {
+            pubBytes = hk->pub;
+            storedKey = hybridKeyJson(*hk);
+        } else {
+            useHybrid = false;
+        }
+    }
+    if (!useHybrid) {
+        const P256Key key = generateP256();
+        pubBytes = spkiDer(key);
+        storedKey = keyJson(key);
+    }
+
     const QString deviceName = tr("KyAuth on %1").arg(QSysInfo::machineHostName().left(60));
     // Serialized once: the proof covers these exact bytes.
     const QByteArray body = QJsonDocument(registrationBody(
-                                              *req, deviceName,
+                                              r, deviceName,
                                               m_vault->data.value(QStringLiteral("deviceIdentifier")).toString(),
-                                              spkiDer(key), *push))
+                                              pubBytes, sent))
                                 .toJson(QJsonDocument::Compact);
-    const QString origin = originOf(req->serverUrl);
-    const QByteArray proofKey = req->pairingToken.isEmpty() ? QByteArray() : pairingKey(req->pairingToken);
+    const QString origin = originOf(r.serverUrl);
+    const QByteArray proofKey = r.pairingToken.isEmpty() ? QByteArray() : pairingKey(r.pairingToken);
     setBusy(true);
-    const PairingRequest r = *req;
-    const PushCredential sent = *push;
     request("POST", r.registrationUrl, body, proofKey.isEmpty() ? QByteArray() : pairingProof(proofKey, origin, body),
-            [this, r, key, sent, body, origin, proofKey](int status, const QByteArray &reply,
-                                                         const QByteArray &replyProof) {
+            [this, r, storedKey, useHybrid, sent, body, origin, proofKey](int status, const QByteArray &reply,
+                                                                          const QByteArray &replyProof) {
         setBusy(false);
+        // Older servers only accept P-256 SPKI and reject before consuming the pairing token.
+        if (useHybrid && status == 400
+            && serverError(status, reply).contains(QStringLiteral("P-256"), Qt::CaseInsensitive))
+            return submitPairing(r, sent, false);
         if (!proofKey.isEmpty() && status >= 200 && status <= 299
             && !pairingReplyVerified(proofKey, origin, body, reply, replyProof))
             return say(tr("The server's pairing reply could not be verified."));
@@ -652,7 +703,7 @@ void Controller::pair(const QString &code)
                                          {QStringLiteral("username"), r.username},
                                          {QStringLiteral("deviceId"), ids->first},
                                          {QStringLiteral("userId"), ids->second},
-                                         {QStringLiteral("key"), keyJson(key)},
+                                         {QStringLiteral("key"), storedKey},
                                          {QStringLiteral("push"), pushJson(sent)}});
         if (!saveVault(before))
             return;
@@ -713,7 +764,8 @@ void Controller::respond(const QString &challengeId, bool approve, const QString
     const QByteArray pushed = m_challengeBody;
     auto msg = pushResponseMessage(originOf(server), p.value(QStringLiteral("userId")).toString(), deviceId, c,
                                    approve, digits);
-    const QByteArray sig = msg ? signDer(keyFrom(p.value(QStringLiteral("key"))), *msg) : QByteArray();
+    const QByteArray sig =
+        msg ? signDeviceMessage(p.value(QStringLiteral("key")), kHybridPushResponseLabel, *msg) : QByteArray();
     if (sig.isEmpty())
         return say(tr("Could not sign the answer."));
     const QJsonObject body{{QStringLiteral("challengeId"), c.challengeId},

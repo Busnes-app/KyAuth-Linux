@@ -102,6 +102,7 @@ private:
     std::optional<ky::PushCredential> currentPush() const;
     void handlePushBody(const QByteArray &body);
     void refreshPushIfNeeded();
+    void submitPairing(const ky::PairingRequest &r, const ky::PushCredential &sent, bool useHybrid);
     void respond(const QString &challengeId, bool approve, const QString &digits);
     void notifyDesktop();
 

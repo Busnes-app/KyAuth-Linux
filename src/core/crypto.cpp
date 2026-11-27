@@ -200,6 +200,183 @@ bool verifyDer(const QByteArray &spki, const QByteArray &message, const QByteArr
         && EVP_DigestVerify(md.get(), u(signature), signature.size(), u(message), message.size()) == 1;
 }
 
+namespace {
+
+constexpr int kHybridTagSize = 16; // "mldsa65+ed25519\0"
+constexpr char kHybridTag[kHybridTagSize] = {'m', 'l', 'd', 's', 'a', '6', '5', '+',
+                                             'e', 'd', '2', '5', '5', '1', '9', '\0'};
+constexpr int kHybridSeedSize = 32;
+constexpr int kMldsa65PubSize = 1952;
+constexpr int kMldsa65SigSize = 3309;
+constexpr int kEd25519PubSize = 32;
+constexpr int kEd25519SigSize = 64;
+constexpr int kHybridPubSize = kHybridTagSize + kMldsa65PubSize + kEd25519PubSize;
+constexpr int kHybridSigSize = kHybridTagSize + kMldsa65SigSize + kEd25519SigSize;
+
+QByteArray hybridTag() { return QByteArray(kHybridTag, kHybridTagSize); }
+
+std::optional<QByteArray> hybridDigest(const QByteArray &label, const QByteArray &message)
+{
+    if (label.isEmpty() || label.contains('\0'))
+        return std::nullopt;
+    MdCtx md(EVP_MD_CTX_new());
+    QByteArray digest(32, 0);
+    unsigned int len = 0;
+    const uchar sep = 0;
+    if (!md || EVP_DigestInit_ex(md.get(), EVP_sha256(), nullptr) != 1
+        || EVP_DigestUpdate(md.get(), u(label), size_t(label.size())) != 1
+        || EVP_DigestUpdate(md.get(), &sep, 1) != 1
+        || EVP_DigestUpdate(md.get(), u(message), size_t(message.size())) != 1
+        || EVP_DigestFinal_ex(md.get(), u(digest), &len) != 1 || len != 32)
+        return std::nullopt;
+    return digest;
+}
+
+Pkey loadMldsa65Private(const QByteArray &seed)
+{
+    if (seed.size() != kHybridSeedSize)
+        return {};
+    ParamBld bld(OSSL_PARAM_BLD_new());
+    if (!bld || !OSSL_PARAM_BLD_push_octet_string(bld.get(), "seed", seed.constData(), size_t(seed.size())))
+        return {};
+    Params params(OSSL_PARAM_BLD_to_param(bld.get()));
+    PkeyCtx ctx(EVP_PKEY_CTX_new_from_name(nullptr, "ML-DSA-65", nullptr));
+    EVP_PKEY *raw = nullptr;
+    if (!params || !ctx || EVP_PKEY_fromdata_init(ctx.get()) != 1
+        || EVP_PKEY_fromdata(ctx.get(), &raw, EVP_PKEY_KEYPAIR, params.get()) != 1)
+        return {};
+    return Pkey(raw);
+}
+
+Pkey loadMldsa65Public(const QByteArray &pub)
+{
+    if (pub.size() != kMldsa65PubSize)
+        return {};
+    ParamBld bld(OSSL_PARAM_BLD_new());
+    if (!bld
+        || !OSSL_PARAM_BLD_push_octet_string(bld.get(), OSSL_PKEY_PARAM_PUB_KEY, pub.constData(), size_t(pub.size())))
+        return {};
+    Params params(OSSL_PARAM_BLD_to_param(bld.get()));
+    PkeyCtx ctx(EVP_PKEY_CTX_new_from_name(nullptr, "ML-DSA-65", nullptr));
+    EVP_PKEY *raw = nullptr;
+    if (!params || !ctx || EVP_PKEY_fromdata_init(ctx.get()) != 1
+        || EVP_PKEY_fromdata(ctx.get(), &raw, EVP_PKEY_PUBLIC_KEY, params.get()) != 1)
+        return {};
+    return Pkey(raw);
+}
+
+QByteArray signOneShot(EVP_PKEY *pkey, const QByteArray &digest, int expectedLen)
+{
+    MdCtx md(EVP_MD_CTX_new());
+    size_t len = 0;
+    if (!pkey || !md
+        || EVP_DigestSignInit_ex(md.get(), nullptr, nullptr, nullptr, nullptr, pkey, nullptr) != 1
+        || EVP_DigestSign(md.get(), nullptr, &len, u(digest), size_t(digest.size())) != 1
+        || len != size_t(expectedLen))
+        return {};
+    QByteArray sig(expectedLen, 0);
+    if (EVP_DigestSign(md.get(), u(sig), &len, u(digest), size_t(digest.size())) != 1
+        || len != size_t(expectedLen))
+        return {};
+    return sig;
+}
+
+bool verifyOneShot(EVP_PKEY *pkey, const QByteArray &digest, const QByteArray &sig)
+{
+    MdCtx md(EVP_MD_CTX_new());
+    return pkey && md
+        && EVP_DigestVerifyInit_ex(md.get(), nullptr, nullptr, nullptr, nullptr, pkey, nullptr) == 1
+        && EVP_DigestVerify(md.get(), u(sig), size_t(sig.size()), u(digest), size_t(digest.size())) == 1;
+}
+
+} // namespace
+
+bool hybridSigAvailable()
+{
+    PkeyCtx ctx(EVP_PKEY_CTX_new_from_name(nullptr, "ML-DSA-65", nullptr));
+    return bool(ctx);
+}
+
+std::optional<HybridKey> hybridSigFromSeeds(const QByteArray &mldsaSeed, const QByteArray &edSeed)
+{
+    if (mldsaSeed.size() != kHybridSeedSize || edSeed.size() != kHybridSeedSize)
+        return std::nullopt;
+    Pkey mldsa = loadMldsa65Private(mldsaSeed);
+    Pkey ed(EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, nullptr, u(edSeed), size_t(edSeed.size())));
+    if (!mldsa || !ed)
+        return std::nullopt;
+    QByteArray mldsaPub(kMldsa65PubSize, 0);
+    size_t mldsaPubLen = 0;
+    QByteArray edPub(kEd25519PubSize, 0);
+    size_t edPubLen = size_t(edPub.size());
+    if (EVP_PKEY_get_octet_string_param(mldsa.get(), OSSL_PKEY_PARAM_PUB_KEY, u(mldsaPub), size_t(mldsaPub.size()),
+                                        &mldsaPubLen)
+            != 1
+        || mldsaPubLen != size_t(kMldsa65PubSize)
+        || EVP_PKEY_get_raw_public_key(ed.get(), u(edPub), &edPubLen) != 1 || edPubLen != size_t(kEd25519PubSize))
+        return std::nullopt;
+    QByteArray pub;
+    pub.reserve(kHybridPubSize);
+    pub.append(kHybridTag, kHybridTagSize);
+    pub.append(mldsaPub);
+    pub.append(edPub);
+    return HybridKey{mldsaSeed, edSeed, pub};
+}
+
+std::optional<HybridKey> generateHybridSig()
+{
+    if (!hybridSigAvailable())
+        return std::nullopt;
+    return hybridSigFromSeeds(randomBytes(kHybridSeedSize), randomBytes(kHybridSeedSize));
+}
+
+QByteArray signHybridSig(const HybridKey &key, const QByteArray &label, const QByteArray &message)
+{
+    auto digest = hybridDigest(label, message);
+    if (!digest)
+        return {};
+    Pkey mldsa = loadMldsa65Private(key.mldsaSeed);
+    Pkey ed(key.edSeed.size() == kHybridSeedSize
+                ? EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, nullptr, u(key.edSeed), size_t(key.edSeed.size()))
+                : nullptr);
+    if (!mldsa || !ed)
+        return {};
+    const QByteArray mldsaSig = signOneShot(mldsa.get(), *digest, kMldsa65SigSize);
+    const QByteArray edSig = signOneShot(ed.get(), *digest, kEd25519SigSize);
+    if (mldsaSig.isEmpty() || edSig.isEmpty())
+        return {};
+    QByteArray out;
+    out.reserve(kHybridSigSize);
+    out.append(kHybridTag, kHybridTagSize);
+    out.append(mldsaSig);
+    out.append(edSig);
+    return out;
+}
+
+bool verifyHybridSig(const QByteArray &pubKey, const QByteArray &label, const QByteArray &message,
+                     const QByteArray &signature)
+{
+    if (pubKey.size() != kHybridPubSize || signature.size() != kHybridSigSize)
+        return false;
+    const QByteArray tag = hybridTag();
+    if (!pubKey.startsWith(tag) || !signature.startsWith(tag))
+        return false;
+    auto digest = hybridDigest(label, message);
+    if (!digest)
+        return false;
+    const QByteArray mldsaPub = pubKey.mid(kHybridTagSize, kMldsa65PubSize);
+    const QByteArray edPub = pubKey.mid(kHybridTagSize + kMldsa65PubSize, kEd25519PubSize);
+    Pkey mldsa = loadMldsa65Public(mldsaPub);
+    Pkey ed(EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, nullptr, u(edPub), size_t(edPub.size())));
+    if (!mldsa || !ed)
+        return false;
+    const QByteArray mldsaSig = signature.mid(kHybridTagSize, kMldsa65SigSize);
+    const QByteArray edSig = signature.mid(kHybridTagSize + kMldsa65SigSize, kEd25519SigSize);
+    const bool okMldsa = verifyOneShot(mldsa.get(), *digest, mldsaSig);
+    const bool okEd = verifyOneShot(ed.get(), *digest, edSig);
+    return okMldsa && okEd;
+}
+
 std::optional<QByteArray> webPushDecrypt(const P256Key &receiver, const QByteArray &auth,
                                          const QByteArray &body)
 {
